@@ -1,0 +1,7 @@
+{
+    "venvPath": "./twsapi",
+    "venv": ".venv",
+    "extraPaths": [
+        "./twsapi/IBJts/source/pythonclient"
+    ]
+}

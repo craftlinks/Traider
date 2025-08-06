@@ -1,0 +1,5 @@
+{
+  "python.defaultInterpreterPath": "twsapi/.venv/bin/python",
+  "python.analysis.extraPaths": ["twsapi/IBJts/source/pythonclient"],
+  "python.autoComplete.extraPaths": ["twsapi/IBJts/source/pythonclient"]
+}
