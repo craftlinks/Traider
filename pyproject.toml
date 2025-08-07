@@ -1,3 +1,7 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
 [project]
 name = "trader"
 version = "0.1.0"
@@ -7,3 +11,6 @@ requires-python = ">=3.12"
 dependencies = [
     "ibapi @ file:///${PROJECT_ROOT}/twsapi/IBJts/source/pythonclient",
 ]
+
+[tool.setuptools.packages.find]
+where = ["src"]
