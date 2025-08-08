@@ -46,6 +46,9 @@ class IBApp(EWrapper, EClient):
         self.open_orders_event = threading.Event()
         self.market_data: Dict[int, MarketData] = {}
         self.market_data_events: Dict[int, threading.Event] = {}
+        # Track order status and fill events per order id
+        self.order_status: Dict[int, str] = {}
+        self.order_fill_events: Dict[int, threading.Event] = {}
 
     def error(self, reqId: int, errorTime: int, errorCode: int, errorString: str, advancedOrderRejectJson=""):
         # IB's error messages are a mixed bag, so we need to filter them
@@ -106,6 +109,12 @@ class IBApp(EWrapper, EClient):
         super().orderStatus(orderId, status, filled, remaining, avgFillPrice, permId, parentId, lastFillPrice, clientId, whyHeld, mktCapPrice)
         logger.info("OrderStatus. Id: %s, Status: %s, Filled: %s, Remaining: %s, AvgFillPrice: %s", 
                     orderId, status, filled, remaining, avgFillPrice)
+        # Record latest status and notify waiting threads on terminal states
+        self.order_status[orderId] = status
+        if status in ("Filled", "Cancelled", "ApiCancelled", "Inactive"):
+            event = self.order_fill_events.get(orderId)
+            if event is not None:
+                event.set()
         
     def execDetails(self, reqId: int, contract: IBContract, execution: Execution):
         super().execDetails(reqId, contract, execution)
@@ -176,27 +185,29 @@ class InteractiveBrokersPlatform(TradingPlatform):
         self.app.account_summary_event.wait()
         return self.app.account_summary
     
-    def buy(self, contract: Contract, order: Order) -> None:
+    def buy(self, contract: Contract, order: Order) -> int:
         ib_order = self._create_ib_order(order)
         ib_order.action = "BUY"
-        self._place_order(contract, ib_order)
+        return self._place_order(contract, ib_order)
 
-    def sell(self, contract: Contract, order: Order) -> None:
+    def sell(self, contract: Contract, order: Order) -> int:
         ib_order = self._create_ib_order(order)
         ib_order.action = "SELL"
-        self._place_order(contract, ib_order)
+        return self._place_order(contract, ib_order)
 
     def modify_order(self, order_id: int, order: Order) -> None:
         """Modifies an existing order."""
         ib_order = self._create_ib_order(order)
         self._place_order(order.contract, ib_order, order_id)
 
-    def get_open_orders(self) -> List[Order]:
-        """Retrieves all open orders."""
+    def get_open_orders(self, timeout_seconds: float = 5.0) -> List[Order]:
+        """Retrieves all open orders with a timeout to avoid hangs."""
         self.app.open_orders.clear()
         self.app.open_orders_event.clear()
         self.app.reqAllOpenOrders()
-        self.app.open_orders_event.wait()
+        event_set = self.app.open_orders_event.wait(timeout=timeout_seconds)
+        if not event_set:
+            logger.warning("Timed out waiting for open orders response from IB.")
         return list(self.app.open_orders.values())
 
     def cancel_order(self, order_id: int) -> None:
@@ -268,11 +279,15 @@ class InteractiveBrokersPlatform(TradingPlatform):
         self.app.next_valid_order_id += 1
         return order_id
 
-    def _place_order(self, contract: Contract, order: IBOrder, order_id: int | None = None):
-        """Creates the IB contract and places the order."""
+    def _place_order(self, contract: Contract, order: IBOrder, order_id: int | None = None) -> int:
+        """Creates the IB contract and places the order. Returns the order id used."""
         ib_contract = self._create_ib_contract(contract)
         order_id_to_use = order_id if order_id is not None else self._get_next_order_id()
+        # Ensure an event exists for this order id before placing
+        if order_id_to_use not in self.app.order_fill_events:
+            self.app.order_fill_events[order_id_to_use] = threading.Event()
         self.app.placeOrder(order_id_to_use, ib_contract, order)
+        return order_id_to_use
 
 
     def _create_ib_contract(self, contract: Contract) -> IBContract:
@@ -299,3 +314,17 @@ class InteractiveBrokersPlatform(TradingPlatform):
         if order.limit_price:
             ib_order.lmtPrice = float(order.limit_price)
         return ib_order
+
+    # ---------- Order status helpers ----------
+    def get_order_status(self, order_id: int) -> Optional[str]:
+        return self.app.order_status.get(order_id)
+
+    def wait_for_fill(self, order_id: int, timeout_seconds: float = 30.0) -> bool:
+        event = self.app.order_fill_events.get(order_id)
+        if event is None:
+            # Create one if missing to avoid None handling
+            event = threading.Event()
+            self.app.order_fill_events[order_id] = event
+        event.wait(timeout=timeout_seconds)
+        status = self.get_order_status(order_id)
+        return status == "Filled"

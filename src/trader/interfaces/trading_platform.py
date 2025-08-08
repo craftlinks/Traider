@@ -25,20 +25,18 @@ class TradingPlatform(ABC):
         pass
 
     @abstractmethod
-    def buy(self, contract: Contract, order: Order) -> None:
-        """Places a buy order."""
+    def buy(self, contract: Contract, order: Order) -> int:
+        """Places a buy order and returns the assigned order ID."""
         pass
 
     @abstractmethod
-    def sell(self, contract: Contract, order: Order) -> None:
-        """Places a sell order."""
+    def sell(self, contract: Contract, order: Order) -> int:
+        """Places a sell order and returns the assigned order ID."""
         pass
 
     @abstractmethod
-    def get_open_orders(self) -> List[Order]:
-        """
-        Retrieves all open orders.
-        """
+    def get_open_orders(self, timeout_seconds: float = 5.0) -> List[Order]:
+        """Retrieves all open orders (with a timeout to avoid hangs)."""
         pass
 
     @abstractmethod
@@ -63,4 +61,14 @@ class TradingPlatform(ABC):
         """
         Cancels a market data subscription.
         """
+        pass
+
+    @abstractmethod
+    def get_order_status(self, order_id: int) -> Optional[str]:
+        """Returns the latest known status string for an order ID, if available."""
+        pass
+
+    @abstractmethod
+    def wait_for_fill(self, order_id: int, timeout_seconds: float = 30.0) -> bool:
+        """Blocks until the given order is Fully Filled or timeout; returns True if filled."""
         pass
