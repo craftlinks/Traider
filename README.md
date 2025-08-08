@@ -1,4 +1,4 @@
-# Trader
+# Traider
 
 An AI-powered automated trading system designed to interface with various brokerage platforms.
 
@@ -18,8 +18,8 @@ Follow these steps to set up a development environment. This will install the pr
 
 1.  **Clone the repository:**
     ```bash
-    git clone https://github.com/your-username/Trader.git
-    cd Trader
+    git clone https://github.com/your-username/Traider.git
+    cd Traider
     ```
 
 2.  **Create the virtual environment:**
@@ -28,14 +28,14 @@ Follow these steps to set up a development environment. This will install the pr
     ```
 
 3.  **Install dependencies and the project in editable mode:**
-    This command will create a virtual environment, install all required dependencies from the `uv.lock` file, and make the local `trader` package available for import.
+    This command will create a virtual environment, install all required dependencies from the `uv.lock` file, and make the local `traider` package available for import.
     ```bash
     uv pip install -e .
     ```
 
 3.  **Run the application:**
     ```bash
-    uv run -m trader.main
+    uv run -m traider.main
     ```
 
 ### Production Setup
@@ -44,8 +44,8 @@ For a production or non-development environment, you can install the project dir
 
 1.  **Clone the repository:**
     ```bash
-    git clone https://github.com/your-username/Trader.git
-    cd Trader
+    git clone https://github.com/your-username/Traider.git
+    cd Traider
     ```
 
 2.  **Sync the environment:**
@@ -56,14 +56,14 @@ For a production or non-development environment, you can install the project dir
 
 3.  **Run the application:**
     ```bash
-    uv run -m trader.main
+    uv run -m traider.main
     ```
 
 ## Platform Setup
 
 ### Interactive Brokers IB Gateway
 
-The Trader application can connect to Interactive Brokers using the IB Gateway. The IB Gateway provides access to the Interactive Brokers trading system through an API, which this application uses to manage trades. You can find more about the TWS API [here](https://www.interactivebrokers.com/campus/trading-lessons/what-is-the-tws-api/).
+The Traider application can connect to Interactive Brokers using the IB Gateway. The IB Gateway provides access to the Interactive Brokers trading system through an API, which this application uses to manage trades. You can find more about the TWS API [here](https://www.interactivebrokers.com/campus/trading-lessons/what-is-the-tws-api/).
 
 Before running the application with the Interactive Brokers platform, you need to install and run the IB Gateway.
 
