@@ -71,7 +71,7 @@ def main() -> None:
     )
 
     # Suppress noisy INFO logs from ibapi internals
-    for noisy_logger in ("ibapi", "ibapi.utils", "ibapi.client", "ibapi.wrapper"):
+    for noisy_logger in ("ibapi", "ibapi.utils", "ibapi.client", "ibapi.wrapper", "trader.platforms.interactive_brokers", "alpaca.data.live.websocket"):
         nl = logging.getLogger(noisy_logger)
         nl.setLevel(logging.WARNING)
         nl.propagate = False
