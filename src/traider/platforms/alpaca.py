@@ -5,8 +5,8 @@ from alpaca.data.historical import StockHistoricalDataClient
 from alpaca.data.requests import StockLatestTradeRequest, StockLatestQuoteRequest
 from alpaca.data.live import StockDataStream
 from alpaca.data.enums import DataFeed
-from trader.interfaces.market_data import MarketDataInterface
-from trader.models import Trade, Quote
+from traider.interfaces.market_data import MarketDataInterface
+from traider.models import Trade, Quote
 
 class AlpacaMarketData(MarketDataInterface):
     """

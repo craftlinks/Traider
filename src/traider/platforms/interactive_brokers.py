@@ -13,8 +13,8 @@ from ibapi.order_state import OrderState
 from ibapi.execution import Execution
 from ibapi.ticktype import TickTypeEnum
 
-from trader.interfaces.trading_platform import TradingPlatform
-from trader.models import Contract, Order, OrderAction, OrderType, TimeInForce, SecurityType, MarketData
+from traider.interfaces.trading_platform import TradingPlatform
+from traider.models import Contract, Order, OrderAction, OrderType, TimeInForce, SecurityType, MarketData
 
 # Configure logging
 logger = logging.getLogger(__name__)

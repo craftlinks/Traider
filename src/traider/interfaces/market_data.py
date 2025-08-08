@@ -1,6 +1,6 @@
 from abc import ABC, abstractmethod
 from typing import Optional, Callable
-from trader.models import Trade, Quote
+from traider.models import Trade, Quote
 
 class MarketDataInterface(ABC):
     """

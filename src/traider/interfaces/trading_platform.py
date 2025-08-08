@@ -1,7 +1,7 @@
 from abc import ABC, abstractmethod
 from typing import Dict, Any, List, Optional
 
-from trader.models import Contract, Order, MarketData
+from traider.models import Contract, Order, MarketData
 
 
 class TradingPlatform(ABC):

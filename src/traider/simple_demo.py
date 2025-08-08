@@ -28,7 +28,7 @@ from dotenv import load_dotenv
 
 from alpaca.data.enums import DataFeed
 
-from trader.models import (
+from traider.models import (
     Contract,
     Order,
     OrderAction,
@@ -37,7 +37,7 @@ from trader.models import (
     Trade,
     Quote,
 )
-from trader.platforms import AlpacaMarketData, InteractiveBrokersPlatform
+from traider.platforms import AlpacaMarketData, InteractiveBrokersPlatform
 
 logger = logging.getLogger(__name__)
 
