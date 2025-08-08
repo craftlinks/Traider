@@ -1,7 +1,6 @@
 from dataclasses import dataclass
 from enum import Enum
-from decimal import Decimal
-from typing import Optional, ClassVar
+from typing import Optional
 
 class SecurityType(Enum):
     STOCK = "STK"
@@ -35,11 +34,13 @@ class TimeInForce(Enum):
 
 @dataclass
 class Order:
+    contract: Contract
     action: OrderAction
     order_type: OrderType
-    quantity: Decimal
+    quantity: float
     time_in_force: TimeInForce = TimeInForce.DAY
-    limit_price: Optional[Decimal] = None
+    limit_price: Optional[float] = None
     order_id: Optional[int] = None
     status: Optional[str] = None
+    outside_rth: bool = False
 

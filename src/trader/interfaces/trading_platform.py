@@ -40,3 +40,13 @@ class TradingPlatform(ABC):
         Retrieves all open orders.
         """
         pass
+
+    @abstractmethod
+    def cancel_order(self, order_id: int) -> None:
+        """Cancels an existing order."""
+        pass
+
+    @abstractmethod
+    def modify_order(self, order_id: int, order: Order) -> None:
+        """Modifies an existing order."""
+        pass
