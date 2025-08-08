@@ -1,6 +1,9 @@
 from abc import ABC, abstractmethod
 from typing import Dict, Any
 
+from trader.models import Contract, Order
+
+
 class TradingPlatform(ABC):
     """
     An abstract interface for a trading platform.
@@ -19,4 +22,14 @@ class TradingPlatform(ABC):
     @abstractmethod
     def get_account_summary(self) -> Dict[str, Any]:
         """Retrieve account summary information."""
+        pass
+
+    @abstractmethod
+    def buy(self, contract: Contract, order: Order) -> None:
+        """Places a buy order."""
+        pass
+
+    @abstractmethod
+    def sell(self, contract: Contract, order: Order) -> None:
+        """Places a sell order."""
         pass
