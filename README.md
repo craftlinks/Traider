@@ -33,9 +33,9 @@ Follow these steps to set up a development environment. This will install the pr
     uv pip install -e .
     ```
 
-3.  **Run the application:**
+3.  **Run the simple demo application:**
     ```bash
-    uv run -m traider.main
+    uv run -m traider.simple_demo
     ```
 
 ### Production Setup
@@ -54,9 +54,9 @@ For a production or non-development environment, you can install the project dir
     uv sync
     ```
 
-3.  **Run the application:**
+3.  **Run the simple demo application:**
     ```bash
-    uv run -m traider.main
+    uv run -m traider.simple_demo
     ```
 
 ## Platform Setup
