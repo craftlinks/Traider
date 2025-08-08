@@ -1,7 +1,7 @@
 from abc import ABC, abstractmethod
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 
-from trader.models import Contract, Order
+from trader.models import Contract, Order, MarketData
 
 
 class TradingPlatform(ABC):
@@ -49,4 +49,18 @@ class TradingPlatform(ABC):
     @abstractmethod
     def modify_order(self, order_id: int, order: Order) -> None:
         """Modifies an existing order."""
+        pass
+
+    @abstractmethod
+    def get_market_data(self, contract: Contract) -> Optional[MarketData]:
+        """
+        Retrieves market data for a given contract.
+        """
+        pass
+
+    @abstractmethod
+    def cancel_market_data(self, ticker_id: int) -> None:
+        """
+        Cancels a market data subscription.
+        """
         pass

@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from datetime import datetime
 from enum import Enum
 from typing import Optional
 
@@ -44,3 +45,41 @@ class Order:
     status: Optional[str] = None
     outside_rth: bool = False
 
+@dataclass
+class MarketData:
+    """Represents market data for a financial instrument."""
+    ticker_id: int
+    bid_price: Optional[float] = None
+    ask_price: Optional[float] = None
+    last_price: Optional[float] = None
+    volume: Optional[int] = None
+
+
+@dataclass
+class Bar:
+    """Represents a single bar of historical data."""
+    timestamp: datetime
+    open: float
+    high: float
+    low: float
+    close: float
+    volume: int
+
+
+@dataclass
+class Trade:
+    """Represents a single trade."""
+    price: float
+    size: int
+    timestamp: datetime
+    exchange: str
+
+
+@dataclass
+class Quote:
+    """Represents a single bid/ask quote."""
+    bid_price: float
+    bid_size: int
+    ask_price: float
+    ask_size: int
+    timestamp: datetime

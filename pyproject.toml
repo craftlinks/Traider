@@ -9,7 +9,9 @@ description = "AI pilled automated trading system"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
+    "alpaca-py>=0.42.0",
     "ibapi @ file:///${PROJECT_ROOT}/twsapi/IBJts/source/pythonclient",
+    "python-dotenv>=1.0.0",
 ]
 
 [tool.setuptools.packages.find]

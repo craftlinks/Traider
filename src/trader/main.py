@@ -1,103 +1,69 @@
 import logging
 import time
-
-from trader.models import Contract, Order, OrderAction, OrderType, SecurityType
-from trader.interfaces.trading_platform import TradingPlatform
-from trader.platforms.interactive_brokers import InteractiveBrokersPlatform
+from dotenv import load_dotenv
+from trader.platforms import AlpacaMarketData
+from trader.models import Trade, Quote
 
 def main():
-    """
-    A simple application to test the InteractiveBrokersPlatform.
-    """
-    logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
-    logging.getLogger('ibapi.utils').setLevel(logging.WARNING)
+    load_dotenv()  # Load environment variables from .env file
+    logging.basicConfig(
+        level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
+    )
 
-    # Instantiate the platform
-    ib_platform: TradingPlatform = InteractiveBrokersPlatform()
+    from alpaca.data.enums import DataFeed
 
-    # Connection details for a paper trading account
-    host = "127.0.0.1"
-    port = 4002  # 7497 for TWS Paper, 4002 for IBG Paper
-    client_id = 1
+    # Use free IEX feed by default to avoid subscription errors
+    alpaca_market_data = AlpacaMarketData(feed=DataFeed.IEX)
 
-    # Connect to the platform
-    ib_platform.connect(host, port, client_id)
+    # --- Latest Trade ---
+    print("--- Synchronous Call: Latest Trade ---")
+    trade_sync = alpaca_market_data.get_latest_trade("AAPL")
+    if trade_sync:
+        print(f"Latest trade for AAPL: {trade_sync}")
 
-    # Allow time for connection to be established
-    logging.info("Connecting...")
-    time.sleep(3) 
+    print("\n--- Second Trade Snapshot ---")
+    trade_second = alpaca_market_data.get_latest_trade("GOOG")
+    if trade_second:
+        print(f"Latest trade for GOOG: {trade_second}")
 
-    # Check for open orders
-    logging.info("Checking for open orders...")
-    open_orders = ib_platform.get_open_orders()
-    if open_orders:
-        logging.info("Found open orders: %s", open_orders)
-        for order in open_orders:
-            if order.order_id:
-                logging.info("Canceling order %s", order.order_id)
-                ib_platform.cancel_order(order.order_id)
-        logging.info("Canceled all open orders.")
-        time.sleep(3) # Give some time for the cancellations to process
-    else:
-        logging.info("No open orders found.")
+    # --- Latest Quote ---
+    print("\n--- Synchronous Call: Latest Quote ---")
+    quote_sync = alpaca_market_data.get_latest_quote("NVDA")
+    if quote_sync:
+        print(f"Latest quote for NVDA: {quote_sync}")
+        print(f"  Spread: {round(quote_sync.ask_price - quote_sync.bid_price, 2)}")
 
-    # Get and print the account summary
-    logging.info("Fetching account summary...")
-    account_summary = ib_platform.get_account_summary()
-    logging.info("Account Summary: %s", account_summary)
+    print("\n--- Second Quote Snapshot ---")
+    quote_second = alpaca_market_data.get_latest_quote("MSFT")
+    if quote_second:
+        print(f"Latest quote for MSFT: {quote_second}")
+        print(f"  Spread: {round(quote_second.ask_price - quote_second.bid_price, 2)}")
 
-    # Place a buy order
-    logging.info("Placing a buy order...")
-    contract = Contract(symbol="AAPL", sec_type=SecurityType.STOCK, currency="USD", exchange="SMART")
-    order = Order(contract=contract, action=OrderAction.BUY, order_type=OrderType.MARKET, quantity=1.0, outside_rth=False)
-    ib_platform.buy(contract, order)
-    logging.info("Buy order placed.")
+    # --- Streaming demo: subscribe, receive briefly, then unsubscribe ---
+    print("\n--- Streaming: AAPL trades & quotes for 5s ---")
 
-    time.sleep(5)  # Allow time for order to be processed
+    def on_trade(trade: Trade) -> None:
+        logging.info("TRADE %s: %s x %s", trade.timestamp, trade.price, trade.size)
 
-    # Modify the order
-    logging.info("Modifying the buy order...")
-    open_orders = ib_platform.get_open_orders()
-    if open_orders:
-        for o in open_orders:
-            if o.order_id and o.action == OrderAction.BUY:
-                logging.info("Modifying order %s", o.order_id)
-                o.outside_rth = True
-                ib_platform.modify_order(o.order_id, o)
-        logging.info("Order modified.")
-    else:
-        logging.info("No open orders found to modify.")
+    def on_quote(quote: Quote) -> None:
+        logging.info(
+            "QUOTE %s: bid %.2f x%d / ask %.2f x%d",
+            quote.timestamp,
+            quote.bid_price,
+            quote.bid_size,
+            quote.ask_price,
+            quote.ask_size,
+        )
 
-        time.sleep(5)  # Allow time for order to be processed
+    alpaca_market_data.subscribe_trades("AAPL", on_trade)
+    alpaca_market_data.subscribe_quotes("AAPL", on_quote)
+    time.sleep(1.0)
+    alpaca_market_data.unsubscribe_trades("AAPL")
+    alpaca_market_data.unsubscribe_quotes("AAPL")
+    alpaca_market_data.close()
+    logging.info("Done!")
+    time.sleep(5)
 
-    # Place a sell order
-    logging.info("Placing a sell order...")
-    contract = Contract(symbol="AAPL", sec_type=SecurityType.STOCK, currency="USD", exchange="SMART")
-    order = Order(contract=contract, action=OrderAction.SELL, order_type=OrderType.MARKET, quantity=1.0, outside_rth=False)
-    ib_platform.sell(contract, order)
-    logging.info("Sell order placed.")
-
-    time.sleep(5)  # Allow time for order to be processed
-
-    # Modify the sell order
-    logging.info("Modifying the sell order...")
-    open_orders = ib_platform.get_open_orders()
-    if open_orders:
-        for o in open_orders:
-            if o.order_id and o.action == OrderAction.SELL:
-                logging.info("Modifying order %s", o.order_id)
-                o.outside_rth = True
-                ib_platform.modify_order(o.order_id, o)
-        logging.info("Order modified.")
-    else:
-        logging.info("No open orders found to modify.")
-
-    time.sleep(20)  # Allow time for order to be processed
-
-    # Disconnect from the platform
-    ib_platform.disconnect()
-    logging.info("Disconnected.")
 
 if __name__ == "__main__":
     main()
-

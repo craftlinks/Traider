@@ -101,3 +101,48 @@ Follow the instructions for your operating system.
 2.  Open the downloaded file and follow the on-screen instructions to install.
 
 After installation, you will need to run IB Gateway and log in with your Interactive Brokers account credentials.
+
+### Alpaca Market Data & Trading
+
+The project includes a wrapper around the **Alpaca Market Data API** that can fetch both snapshot and streaming data.  
+Alpaca requires an API key-pair which you obtain from the Alpaca dashboard.
+
+1. **Create a `.env` file** in the project root (already git-ignored) and add:
+
+   ```shell
+   ALPACA_API_KEY="<your-key>"
+   ALPACA_SECRET_KEY="<your-secret>"
+   ```
+
+2. **Choose a data feed**
+
+   Alpaca offers several real-time feeds.  You select the feed when you construct `AlpacaMarketData`.
+
+   | Feed enum                | Cost / Access                        | What you get                                             |
+   | ------------------------ | ------------------------------------ | -------------------------------------------------------- |
+   | `DataFeed.IEX`          | **Free**                             | IEX quotes/trades for listed stocks                      |
+   | `DataFeed.DELAYED_SIP`  | **Free (15-min delayed)**            | Consolidated (SIP) data delayed by 15 minutes            |
+   | `DataFeed.SIP`          | **Paid subscription**                | Full SIP real-time market depth & trades                 |
+
+   Example:
+
+   ```python
+   from alpaca.data.enums import DataFeed
+   from trader.platforms import AlpacaMarketData
+
+   md = AlpacaMarketData(feed=DataFeed.IEX)          # default & free
+   # md = AlpacaMarketData(feed=DataFeed.SIP)        # requires paid plan
+   # md = AlpacaMarketData(feed=DataFeed.DELAYED_SIP)
+   ```
+
+3. **Snapshot vs. streaming**
+
+   • *Snapshot* methods (`get_latest_trade`, `get_latest_quote`) are synchronous and hit Alpaca’s REST endpoints.  
+   • *Streaming* methods (`subscribe_trades`, `subscribe_quotes`) start a background WebSocket thread and invoke your handler callbacks directly.
+
+4. **Common errors**
+
+   *`insufficient subscription`* – you attempted to use `DataFeed.SIP` without a paid plan.  Switch to `DataFeed.IEX` or upgrade your Alpaca account.
+
+Refer to Alpaca’s official docs for more details:  
+<https://docs.alpaca.markets/docs/real-time-stock-pricing-data>

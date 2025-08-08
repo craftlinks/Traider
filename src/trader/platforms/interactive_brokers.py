@@ -1,6 +1,6 @@
 import logging
 import threading
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 from decimal import Decimal
 
 from ibapi.const import UNSET_DOUBLE
@@ -11,9 +11,10 @@ from ibapi.order_cancel import OrderCancel
 from ibapi.order import Order as IBOrder
 from ibapi.order_state import OrderState
 from ibapi.execution import Execution
+from ibapi.ticktype import TickTypeEnum
 
 from trader.interfaces.trading_platform import TradingPlatform
-from trader.models import Contract, Order, OrderAction, OrderType, TimeInForce, SecurityType
+from trader.models import Contract, Order, OrderAction, OrderType, TimeInForce, SecurityType, MarketData
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -43,6 +44,8 @@ class IBApp(EWrapper, EClient):
         self.order_id_received = threading.Event()
         self.open_orders: Dict[int, Order] = {}
         self.open_orders_event = threading.Event()
+        self.market_data: Dict[int, MarketData] = {}
+        self.market_data_events: Dict[int, threading.Event] = {}
 
     def error(self, reqId: int, errorTime: int, errorCode: int, errorString: str, advancedOrderRejectJson=""):
         # IB's error messages are a mixed bag, so we need to filter them
@@ -58,8 +61,11 @@ class IBApp(EWrapper, EClient):
             # Errors
             else:
                 logger.error("Request %d: %d - %s", reqId, errorCode, errorString)
-        # Error handling for account summary request
-        if reqId == 9001:
+        
+        # Unblock waiting events on error
+        if reqId in self.market_data_events:
+            self.market_data_events[reqId].set()
+        elif reqId == 9001:
             self.account_summary_event.set()
 
     def nextValidId(self, orderId: int):
@@ -105,7 +111,34 @@ class IBApp(EWrapper, EClient):
         super().execDetails(reqId, contract, execution)
         logger.info("ExecDetails. ReqId: %s, Contract: %s, Execution: %s", reqId, contract, execution)
 
+    def tickPrice(self, reqId, tickType, price, attrib):
+        super().tickPrice(reqId, tickType, price, attrib)
+        if reqId in self.market_data:
+            if tickType == TickTypeEnum.BID:  # type: ignore
+                self.market_data[reqId].bid_price = price
+            elif tickType == TickTypeEnum.ASK:  # type: ignore
+                self.market_data[reqId].ask_price = price
+            elif tickType == TickTypeEnum.LAST:  # type: ignore
+                self.market_data[reqId].last_price = price
+            
+            if self.market_data[reqId].bid_price is not None and self.market_data[reqId].ask_price is not None:
+                if reqId in self.market_data_events:
+                    self.market_data_events[reqId].set()
 
+
+    def tickSize(self, reqId, tickType, size):
+        super().tickSize(reqId, tickType, size)
+        if reqId in self.market_data:
+            if tickType == TickTypeEnum.VOLUME:  # type: ignore
+                self.market_data[reqId].volume = int(size)
+
+    def tickSnapshotEnd(self, reqId: int):
+        """Called when a snapshot request is completed."""
+        super().tickSnapshotEnd(reqId)
+        logger.info("Snapshot data reception completed for ticker %d", reqId)
+        # Trigger the event to indicate snapshot is complete
+        if reqId in self.market_data_events:
+            self.market_data_events[reqId].set()
 
 class InteractiveBrokersPlatform(TradingPlatform):
     """
@@ -114,6 +147,7 @@ class InteractiveBrokersPlatform(TradingPlatform):
 
     def __init__(self):
         self.app = IBApp()
+        self.next_ticker_id = 0
 
     def connect(self, host: str, port: int, client_id: int):
         """Connect to the trading platform."""
@@ -168,6 +202,62 @@ class InteractiveBrokersPlatform(TradingPlatform):
     def cancel_order(self, order_id: int) -> None:
         """Cancels an existing order."""
         self.app.cancelOrder(order_id, OrderCancel())
+
+    def get_market_data(self, contract: Contract, snapshot: bool = False, regulatory_snapshot: bool = False) -> Optional[MarketData]:
+        """
+        Retrieves market data for a given contract.
+        
+        Args:
+            contract: The contract to get market data for
+            snapshot: If True, requests a free delayed snapshot (cancels automatically)
+            regulatory_snapshot: If True, requests a real-time snapshot ($0.01 USD per US equity)
+        
+        Returns:
+            MarketData object or None if the request fails or times out.
+        """
+        ticker_id = self.next_ticker_id
+        self.next_ticker_id += 1
+        
+        ib_contract = self._create_ib_contract(contract)
+        market_data_event = threading.Event()
+        self.app.market_data_events[ticker_id] = market_data_event
+        self.app.market_data[ticker_id] = MarketData(ticker_id=ticker_id)
+        
+        # For snapshots, don't use genericTickList (should be empty string)
+        generic_tick_list = "" if (snapshot or regulatory_snapshot) else ""
+        
+        self.app.reqMktData(ticker_id, ib_contract, generic_tick_list, snapshot, regulatory_snapshot, [])
+        
+        # Wait for the data to be populated, with a timeout
+        # Snapshots typically arrive faster, but we'll use the same timeout
+        event_was_set = market_data_event.wait(timeout=10)
+        
+        # Clean up the event
+        del self.app.market_data_events[ticker_id]
+
+        if not event_was_set:
+            logger.error("Market data request for %s timed out.", contract.symbol)
+            # For non-snapshot requests, cancel the hanging request
+            if not snapshot and not regulatory_snapshot:
+                self.cancel_market_data(ticker_id)
+            return None
+        
+        # Check if data is valid
+        data = self.app.market_data.get(ticker_id)
+        if data and data.bid_price is not None and data.ask_price is not None:
+             return data
+        else:
+             logger.warning("Market data for %s received but incomplete.", contract.symbol)
+             return None
+
+
+    def cancel_market_data(self, ticker_id: int) -> None:
+        """Cancels a market data subscription."""
+        self.app.cancelMktData(ticker_id)
+        if ticker_id in self.app.market_data:
+            del self.app.market_data[ticker_id]
+        if ticker_id in self.app.market_data_events:
+            del self.app.market_data_events[ticker_id]
 
     def _get_next_order_id(self) -> int:
         """Gets the next valid order ID and increments it."""
