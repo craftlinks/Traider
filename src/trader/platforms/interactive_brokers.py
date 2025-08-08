@@ -1,14 +1,15 @@
 import logging
 import threading
-from typing import Dict, Any
+from typing import Dict, Any, List
 
 from ibapi.client import EClient
 from ibapi.wrapper import EWrapper
 from ibapi.contract import Contract as IBContract
 from ibapi.order import Order as IBOrder
+from ibapi.order_state import OrderState
 
 from trader.interfaces.trading_platform import TradingPlatform
-from trader.models import Contract, Order
+from trader.models import Contract, Order, OrderAction, OrderType, TimeInForce
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -24,9 +25,10 @@ class IBApp(EWrapper, EClient):
         self.account_summary_event = threading.Event()
         self.next_valid_order_id: int | None = None
         self.order_id_received = threading.Event()
+        self.open_orders: Dict[int, Order] = {}
+        self.open_orders_event = threading.Event()
 
     def error(self, reqId: int, errorTime: int, errorCode: int, errorString: str, advancedOrderRejectJson=""):
-        super().error(reqId, errorTime, errorCode, errorString, advancedOrderRejectJson)
         # IB's error messages are a mixed bag, so we need to filter them
         if advancedOrderRejectJson:
             logger.error("Request %d: %d - %s, %s", reqId, errorCode, errorString, advancedOrderRejectJson)
@@ -57,6 +59,25 @@ class IBApp(EWrapper, EClient):
         super().accountSummaryEnd(reqId)
         logger.info("AccountSummaryEnd. ReqId: %d", reqId)
         self.account_summary_event.set()
+
+    def openOrder(self, orderId: int, contract: IBContract, order: IBOrder, orderState: OrderState):
+        super().openOrder(orderId, contract, order, orderState)
+        app_order = Order(
+            action=OrderAction(order.action),
+            order_type=OrderType(order.orderType),
+            quantity=order.totalQuantity,
+            time_in_force=TimeInForce(order.tif),
+            limit_price=order.lmtPrice,
+            order_id=orderId,
+            status=orderState.status
+        )
+        self.open_orders[orderId] = app_order
+
+    def openOrderEnd(self):
+        super().openOrderEnd()
+        logger.info("OpenOrderEnd")
+        self.open_orders_event.set()
+
 
 
 class InteractiveBrokersPlatform(TradingPlatform):
@@ -103,6 +124,14 @@ class InteractiveBrokersPlatform(TradingPlatform):
         ib_order = self._create_ib_order(order)
         ib_order.action = "SELL"
         self._place_order(contract, ib_order)
+
+    def get_open_orders(self) -> List[Order]:
+        """Retrieves all open orders."""
+        self.app.open_orders.clear()
+        self.app.open_orders_event.clear()
+        self.app.reqAllOpenOrders()
+        self.app.open_orders_event.wait()
+        return list(self.app.open_orders.values())
 
     def _get_next_order_id(self) -> int:
         """Gets the next valid order ID and increments it."""

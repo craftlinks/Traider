@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from typing import Dict, Any
+from typing import Dict, Any, List
 
 from trader.models import Contract, Order
 
@@ -32,4 +32,11 @@ class TradingPlatform(ABC):
     @abstractmethod
     def sell(self, contract: Contract, order: Order) -> None:
         """Places a sell order."""
+        pass
+
+    @abstractmethod
+    def get_open_orders(self) -> List[Order]:
+        """
+        Retrieves all open orders.
+        """
         pass

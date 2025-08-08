@@ -11,6 +11,7 @@ def main():
     A simple application to test the InteractiveBrokersPlatform.
     """
     logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+    logging.getLogger('ibapi.utils').setLevel(logging.WARNING)
 
     # Instantiate the platform
     ib_platform: TradingPlatform = InteractiveBrokersPlatform()
@@ -26,6 +27,15 @@ def main():
     # Allow time for connection to be established
     logging.info("Connecting...")
     time.sleep(3) 
+
+    # Check for open orders
+    logging.info("Checking for open orders...")
+    open_orders = ib_platform.get_open_orders()
+    if open_orders:
+        logging.info("Found open orders: %s", open_orders)
+        ib_platform.disconnect()
+        logging.info("Disconnected as there are open orders.")
+        return
 
     # Get and print the account summary
     logging.info("Fetching account summary...")
