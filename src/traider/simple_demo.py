@@ -37,7 +37,8 @@ from traider.models import (
     Trade,
     Quote,
 )
-from traider.platforms import AlpacaMarketData, InteractiveBrokersPlatform
+from traider.platforms.brokers.interactive_brokers import InteractiveBrokersPlatform
+from traider.platforms.market_data.alpaca import AlpacaMarketData
 
 logger = logging.getLogger(__name__)
 
