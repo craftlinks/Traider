@@ -13,6 +13,7 @@ from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 from dotenv import load_dotenv
 import threading
+import random
 
 # Exhibit 99.1 parser utilities
 from traider.platforms.parsers.sec.sec_8k_parser import (
@@ -100,10 +101,26 @@ def _build_session(user_agent: str, min_interval_seconds: float) -> Session:
     return session
 
 
-def _fetch_feed(session: Session, url: str) -> Response:
-    """Fetch the Atom feed with a timeout and return the Response."""
-    response: Response = session.get(url, timeout=10)
-    response.raise_for_status()
+def _fetch_feed(
+    session: Session,
+    url: str,
+    etag: Optional[str] = None,
+    last_modified: Optional[str] = None,
+) -> Response:
+    """Fetch the Atom feed with conditional headers for caching.
+
+    Returns the Response. If the feed is unchanged, status code will be 304.
+    """
+    headers: dict[str, str] = {}
+    if etag:
+        headers["If-None-Match"] = etag
+    if last_modified:
+        headers["If-Modified-Since"] = last_modified
+
+    response: Response = session.get(url, headers=headers, timeout=10)
+    # 304 is a valid response in conditional GET. Do not raise for it.
+    if response.status_code != 304:
+        response.raise_for_status()
     return response
 
 
@@ -195,6 +212,10 @@ def run_poller(
     )
     effective_user_agent: str = user_agent or os.getenv("SEC_USER_AGENT", DEFAULT_USER_AGENT)
     min_req_interval: float = float(os.getenv("SEC_MIN_REQUEST_INTERVAL_SEC", DEFAULT_MIN_REQUEST_INTERVAL_SEC))
+    # Adaptive polling to reduce unnecessary requests
+    max_poll_interval: float = float(os.getenv("SEC_MAX_POLL_INTERVAL", 15))
+    backoff_multiplier: float = float(os.getenv("SEC_NOCHANGE_BACKOFF", 1.5))
+    jitter_fraction: float = float(os.getenv("SEC_JITTER_FRACTION", 0.1))  # +/-10%
 
     seen_filing_ids: Set[str] = set()
     session = _build_session(effective_user_agent, min_req_interval)
@@ -203,7 +224,8 @@ def run_poller(
     print("---------------------------------------------")
     print(
         f"Polling interval: {effective_interval}s | User-Agent: {effective_user_agent} | "
-        f"Min request interval: {min_req_interval:.3f}s"
+        f"Min request interval: {min_req_interval:.3f}s | Max poll: {max_poll_interval:.1f}s | "
+        f"Backoff: {backoff_multiplier}x | Jitter: ±{int(jitter_fraction*100)}%"
     )
 
     if "example.com" in effective_user_agent:
@@ -212,12 +234,31 @@ def run_poller(
             "SEC_USER_AGENT to include your app name and a real contact email/phone."
         )
 
+    feed_etag: Optional[str] = None
+    feed_last_modified: Optional[str] = None
+    current_interval: float = float(effective_interval)
+
     while True:
+        new_filings: List[Filing] = []
         try:
-            response = _fetch_feed(session, ATOM_FEED_URL)
+            response = _fetch_feed(session, ATOM_FEED_URL, etag=feed_etag, last_modified=feed_last_modified)
+
+            if response.status_code == 304:
+                # No change: back off polling interval (up to max) with jitter
+                current_interval = min(max_poll_interval, current_interval * backoff_multiplier)
+                jitter = 1.0 + random.uniform(-jitter_fraction, jitter_fraction)
+                sleep_for = max(1.0, current_interval * jitter)
+                print(f"[{time.ctime()}] Feed not modified (304). Next check in {sleep_for:.1f}s...")
+                time.sleep(sleep_for)
+                continue
+
+            # Update caching headers for next request
+            feed_etag = response.headers.get("ETag")
+            feed_last_modified = response.headers.get("Last-Modified")
+
             feed_updated_utc = _parse_feed_updated(response.content)
             filings: List[Filing] = _parse_entries(response.content)
-            new_filings: List[Filing] = _filter_new_filings(filings, seen_filing_ids)
+            new_filings = _filter_new_filings(filings, seen_filing_ids)
 
             if new_filings:
                 # Oldest first for chronological output
@@ -283,15 +324,24 @@ def run_poller(
                 print(
                     f"[{time.ctime()}] No new filings detected. Checking again in {effective_interval}s..."
                 )
+                # Gradually back off when no new items despite 200 OK
+                current_interval = min(max_poll_interval, current_interval * 1.1)
 
         except requests.exceptions.RequestException as exc:
             print(f"[{time.ctime()}] ERROR: Could not connect to SEC server. {exc}")
+            # Back off more aggressively on network errors
+            current_interval = min(max_poll_interval, max(current_interval, effective_interval) * backoff_multiplier)
         except ET.ParseError as exc:
             print(f"[{time.ctime()}] ERROR: Failed to parse XML feed. {exc}")
         except Exception as exc:  # noqa: BLE001 - broad for resilience in daemon loop
             print(f"[{time.ctime()}] An unexpected error occurred: {exc}")
 
-        time.sleep(effective_interval)
+        # Reset to base when we saw new filings; otherwise use adaptive interval
+        if new_filings:
+            current_interval = float(effective_interval)
+        jitter = 1.0 + random.uniform(-jitter_fraction, jitter_fraction)
+        sleep_for = max(1.0, current_interval * jitter)
+        time.sleep(sleep_for)
 
 
 if __name__ == "__main__":

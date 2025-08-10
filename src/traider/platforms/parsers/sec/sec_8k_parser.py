@@ -46,6 +46,7 @@ import html
 import re
 import time
 from typing import Final, Optional, List, Dict
+from collections import OrderedDict
 from dataclasses import dataclass
 from datetime import datetime
 from zoneinfo import ZoneInfo
@@ -59,6 +60,24 @@ DEFAULT_HEADERS: Final[dict[str, str]] = {
     "User-Agent": "TraderSECParser/1.0 admin@example.com",
     "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
 }
+
+
+# Simple in-process LRU caches to avoid duplicate requests
+_INDEX_TO_TXT_CACHE: "OrderedDict[str, str]" = OrderedDict()
+_TXT_CONTENT_CACHE: "OrderedDict[str, str]" = OrderedDict()
+_MAX_CACHE_ENTRIES: Final[int] = 2048
+
+def _cache_get(cache: "OrderedDict[str, str]", key: str) -> Optional[str]:
+    val = cache.get(key)
+    if val is not None:
+        cache.move_to_end(key)
+    return val
+
+def _cache_put(cache: "OrderedDict[str, str]", key: str, value: str) -> None:
+    cache[key] = value
+    cache.move_to_end(key)
+    if len(cache) > _MAX_CACHE_ENTRIES:
+        cache.popitem(last=False)
 
 
 # Precompiled regex patterns for speed
@@ -122,6 +141,9 @@ def get_filing_text_url(
         Absolute URL to the .txt submission file, or None if not found/errors.
     """
     try:
+        cached = _cache_get(_INDEX_TO_TXT_CACHE, filing_index_url)
+        if cached:
+            return cached
         sess = _get_session(session)
         resp = sess.get(filing_index_url, timeout=15)
         resp.raise_for_status()
@@ -131,9 +153,12 @@ def get_filing_text_url(
             return None
         href = match.group(1)
         if href.startswith("http"):
+            _cache_put(_INDEX_TO_TXT_CACHE, filing_index_url, href)
             return href
         # Most SEC Archive links are relative to https://www.sec.gov
-        return "https://www.sec.gov" + href
+        absolute = "https://www.sec.gov" + href
+        _cache_put(_INDEX_TO_TXT_CACHE, filing_index_url, absolute)
+        return absolute
     except requests.exceptions.RequestException:
         return None
     except Exception:
@@ -153,10 +178,16 @@ def fetch_submission_text(
         The response text or None on error.
     """
     try:
+        cached = _cache_get(_TXT_CONTENT_CACHE, filing_text_url)
+        if cached is not None:
+            return cached
         sess = _get_session(session)
         resp = sess.get(filing_text_url, timeout=20)
         resp.raise_for_status()
-        return resp.text
+        text = resp.text
+        if text:
+            _cache_put(_TXT_CONTENT_CACHE, filing_text_url, text)
+        return text
     except requests.exceptions.RequestException:
         return None
     except Exception:
