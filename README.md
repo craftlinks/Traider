@@ -146,3 +146,45 @@ Alpaca requires an API key-pair which you obtain from the Alpaca dashboard.
 
 Refer to Alpaca’s official docs for more details:  
 <https://docs.alpaca.markets/docs/real-time-stock-pricing-data>
+
+## SEC 8-K Real‑Time Poller
+
+The project includes a lightweight 8‑K detector that polls the SEC’s Atom feed and, for new filings, resolves the index page to the full submission `.txt` and extracts prioritized narrative exhibits (EX‑99.1/99.2/…); it also flags material‑contract exhibits (EX‑10.1/EX‑2.1).
+
+### How it respects SEC fair access
+- **Compliant User‑Agent**: You must set a meaningful UA with a real contact. Example `TraderBot/1.0 you@yourdomain.com`.
+- **Global request throttle**: All `sec.gov` HTTP calls are smoothed by a process‑wide adapter enforcing a minimum inter‑request interval (default 0.2s ≈ 5 req/s) across threads.
+- **Conditional GETs**: The feed is fetched with `If-None-Match`/`If-Modified-Since`. A 304 response skips parsing and backs off the poll interval.
+- **Adaptive polling + jitter**: The poll interval increases when the feed is unchanged or on network errors (with random ±jitter) and resets when new filings arrive.
+- **Retry/Backoff**: Robust retries on 429/5xx respecting `Retry-After` when provided.
+- **In‑process caching**: LRU caches avoid duplicate requests within a run:
+  - Index page → submission `.txt` URL
+  - Submission `.txt` URL → content
+
+These caches live in memory only and reset on process restart.
+
+### Configuration (env vars)
+- `SEC_USER_AGENT` (required in practice): Your UA string. Include app name and real contact.
+- `SEC_POLL_INTERVAL` (default: 3) Base poll interval in seconds.
+- `SEC_MIN_REQUEST_INTERVAL_SEC` (default: 0.2) Minimum spacing between any two `sec.gov` requests.
+- `SEC_MAX_POLL_INTERVAL` (default: 15) Upper bound for adaptive poll interval.
+- `SEC_NOCHANGE_BACKOFF` (default: 1.5) Multiplier applied when feed is unchanged or on errors.
+- `SEC_JITTER_FRACTION` (default: 0.1) Random ±jitter fraction applied to sleep times.
+
+### Run
+```bash
+PYTHONPATH=src \
+SEC_USER_AGENT="TraderBot/1.0 you@yourdomain.com" \
+SEC_MIN_REQUEST_INTERVAL_SEC=0.25 \
+SEC_POLL_INTERVAL=3 \
+SEC_MAX_POLL_INTERVAL=30 \
+python -m traider.platforms.pollers.sec_poller
+```
+
+### Troubleshooting 429 Too Many Requests
+- Set a proper `SEC_USER_AGENT` (avoid placeholders like `example.com`).
+- Increase `SEC_MIN_REQUEST_INTERVAL_SEC` to 0.3–0.5.
+- Increase `SEC_POLL_INTERVAL` and/or `SEC_MAX_POLL_INTERVAL`.
+- Be aware of shared NAT IPs (cloud, office) that may aggregate traffic.
+
+Implementation lives in `src/traider/platforms/pollers/sec_poller.py` (polling, throttle, conditional GETs) and `src/traider/platforms/parsers/sec/sec_8k_parser.py` (exhibit parsing and LRU caches).
