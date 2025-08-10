@@ -47,6 +47,8 @@ import re
 import time
 from typing import Final, Optional, List, Dict
 from dataclasses import dataclass
+from datetime import datetime
+from zoneinfo import ZoneInfo
 
 import requests
 
@@ -88,6 +90,11 @@ HTML_TAG_REGEX: Final[re.Pattern[str]] = re.compile(r"<.*?>", re.DOTALL)
 # br and paragraph-like tags to line breaks, before stripping tags
 BREAK_TAGS_REGEX: Final[re.Pattern[str]] = re.compile(
     r"(?is)<\s*(br\s*/?|/p\s*>|/div\s*>|/li\s*>|/tr\s*>|/h[1-6]\s*>)"
+)
+
+# Header metadata
+ACCEPTANCE_DATETIME_REGEX: Final[re.Pattern[str]] = re.compile(
+    r"<ACCEPTANCE-DATETIME>\s*(\d{14})", re.IGNORECASE
 )
 
 
@@ -362,6 +369,7 @@ class EightKParseResult:
     has_material_contract_exhibit: bool
     fallback_used: bool
     fallback_text: Optional[str]
+    acceptance_datetime_utc: Optional[str]
 
 
 def _clean_html_to_text(raw_html: str) -> str:
@@ -421,6 +429,25 @@ def parse_exhibit_99_1(
         return None
 
 
+def _extract_acceptance_datetime_iso_utc(full_submission_text: str) -> Optional[str]:
+    """Extract <ACCEPTANCE-DATETIME> and convert to ISO 8601 UTC string.
+
+    The value is in the form YYYYMMDDHHMMSS and represents the SEC acceptance
+    time in US/Eastern. We convert it to UTC and return e.g. "2025-08-08T20:10:18Z".
+    """
+    try:
+        m = ACCEPTANCE_DATETIME_REGEX.search(full_submission_text)
+        if not m:
+            return None
+        raw = m.group(1)
+        # Parse naive then localize as US/Eastern to handle DST correctly
+        dt_local = datetime.strptime(raw, "%Y%m%d%H%M%S").replace(tzinfo=ZoneInfo("US/Eastern"))
+        dt_utc = dt_local.astimezone(ZoneInfo("UTC"))
+        return dt_utc.replace(microsecond=0).isoformat().replace("+00:00", "Z")
+    except Exception:
+        return None
+
+
 def analyze_and_extract_8k(
     filing_text_url: str,
     session: Optional[requests.Session] = None,
@@ -441,6 +468,8 @@ def analyze_and_extract_8k(
             if not fetched:
                 return None
             full_text = fetched
+
+        acceptance_iso_utc = _extract_acceptance_datetime_iso_utc(full_text)
 
         items = extract_8k_items(full_text)
         items_tier_map = classify_items(items)
@@ -489,6 +518,7 @@ def analyze_and_extract_8k(
             has_material_contract_exhibit=has_material_contract,
             fallback_used=fallback_used,
             fallback_text=fallback_text,
+            acceptance_datetime_utc=acceptance_iso_utc,
         )
     except Exception:
         return None
