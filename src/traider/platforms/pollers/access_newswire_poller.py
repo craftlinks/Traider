@@ -54,11 +54,11 @@ class AccessNewswirePoller(APIPoller):
     def get_poller_name(self) -> str:
         return "Access Newswire"
 
-    def parse_api_items(self, json_data: Dict[str, Any]) -> List[BaseItem]:
+    def parse_api_items(self, data: Dict[str, Any]) -> List[BaseItem]:
         """Parse Access Newswire API response."""
         items = []
         
-        articles = json_data.get("data", {}).get("articles", [])
+        articles = data.get("data", {}).get("articles", [])
         if not isinstance(articles, list):
             return items
 

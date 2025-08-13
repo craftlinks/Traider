@@ -14,6 +14,10 @@ try:
     HAS_SEC_PARSER = True
 except ImportError:
     HAS_SEC_PARSER = False
+    # Provide stub functions to avoid unbound variable errors
+    get_filing_text_url = None  # type: ignore
+    fetch_submission_text = None  # type: ignore
+    analyze_and_extract_8k = None  # type: ignore
 
 
 # Configuration
@@ -39,7 +43,7 @@ class SECPoller(AtomFeedPoller):
 
     def extract_article_text(self, item: BaseItem) -> str | None:
         """Extract SEC filing text using specialized parser if available."""
-        if not HAS_SEC_PARSER:
+        if not HAS_SEC_PARSER or get_filing_text_url is None or fetch_submission_text is None or analyze_and_extract_8k is None:
             return super().extract_article_text(item)
         
         try:
