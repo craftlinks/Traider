@@ -2,7 +2,7 @@
 
 # Import all the refactored pollers for easy access
 from .access_newswire_poller import AccessNewswirePoller
-from .business_newswire import BusinessWirePoller  
+from .business_newswire_poller import BusinessWirePoller  
 from .globe_newswire_poller import GlobeNewswirePoller
 from .newsroom_poller import NewsroomPoller
 from .pr_newswire_poller import PRNewswirePoller
