@@ -76,14 +76,16 @@ class GlobeNewswirePoller(AtomFeedPoller):
             subject_els = entry.findall("dc:subject", ns)
             keyword_els = entry.findall("dc:keyword", ns)
 
-            if not all([id_el, title_el, link_el]):
+            # Avoid Element truthiness which is False when element has no children in
+            # Python 3.12+. Use explicit None comparison instead.
+            if id_el is None or title_el is None or link_el is None:
                 continue
 
             entry_id = (id_el.text or "").strip()
             title = (title_el.text or "").strip()
             href = link_el.get("href", "").strip()
             
-            if not all([entry_id, title, href]):
+            if not entry_id or not title or not href:
                 continue
 
             # Parse timestamps
