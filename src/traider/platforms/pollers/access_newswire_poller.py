@@ -102,8 +102,11 @@ def run_poller(
     user_agent: str | None = None,
 ) -> None:
     """Run the Access Newswire poller."""
-    poller = AccessNewswirePoller()
-    poller.run(polling_interval_seconds, user_agent)
+    import warnings
+    warnings.warn("Access Newswire poller is currently broken and will not run.", RuntimeWarning, stacklevel=2)
+    return
+    # poller = AccessNewswirePoller()
+    # poller.run(polling_interval_seconds, user_agent)
 
 
 if __name__ == "__main__":

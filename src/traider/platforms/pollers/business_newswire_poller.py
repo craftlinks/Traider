@@ -95,9 +95,11 @@ def run_poller(
     user_agent: str | None = None,
 ) -> None:
     """Run the Business Wire poller."""
-    poller = BusinessWirePoller()
-    poller.run(polling_interval_seconds, user_agent)
-
+    import warnings
+    warnings.warn("Business Wire poller is currently broken and will not run.", RuntimeWarning, stacklevel=2)
+    return
+    # poller = BusinessWirePoller()
+    # poller.run(polling_interval_seconds, user_agent)
 
 if __name__ == "__main__":
     run_poller()
