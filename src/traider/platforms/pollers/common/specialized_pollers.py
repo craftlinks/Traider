@@ -52,8 +52,10 @@ class FeedPoller(BasePoller):
         """Parse XML feed entries into BaseItem objects."""
         pass
 
-    def parse_items(self, data: Response) -> List[BaseItem]:
+    def parse_items(self, data: Response | Dict[str, Any]) -> List[BaseItem]:
         """Parse the response into items."""
+        if not isinstance(data, Response):
+            raise TypeError(f"FeedPoller.parse_items expects Response, got {type(data)}")
         if data.status_code == 304:
             return []  # No new items
         return self.parse_feed_entries(data.content)
@@ -198,8 +200,10 @@ class HTMLPoller(BasePoller):
         """Parse HTML content into BaseItem objects."""
         pass
 
-    def parse_items(self, data: Response) -> List[BaseItem]:
+    def parse_items(self, data: Response | Dict[str, Any]) -> List[BaseItem]:
         """Parse the HTML response into items."""
+        if not isinstance(data, Response):
+            raise TypeError(f"HTMLPoller.parse_items expects Response, got {type(data)}")
         return self.parse_html_items(data.text)
 
     def extract_article_text(self, item: BaseItem) -> str | None:
@@ -232,8 +236,10 @@ class APIPoller(BasePoller):
         """Parse JSON data into BaseItem objects."""
         pass
 
-    def parse_items(self, data: Dict[str, Any]) -> List[BaseItem]:
+    def parse_items(self, data: Response | Dict[str, Any]) -> List[BaseItem]:
         """Parse the JSON data into items."""
+        if isinstance(data, Response):
+            raise TypeError(f"APIPoller.parse_items expects Dict, got {type(data)}")
         return self.parse_api_items(data)
 
     def extract_article_text(self, item: BaseItem) -> str | None:
