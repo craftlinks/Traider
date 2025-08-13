@@ -148,11 +148,16 @@ class RSSFeedPoller(FeedPoller):
             elif link_el is not None and link_el.text:
                 entry_id = link_el.text.strip()
             
-            if not all([entry_id, title_el, link_el]) or not all([title_el.text, link_el.text]):
+            # Similar to Atom feed parsing: avoid relying on Element truthiness. Ensure
+            # elements exist and have non-empty text before proceeding.
+            if title_el is None or link_el is None or not entry_id:
                 continue
-            
-            title = title_el.text.strip()
-            href = link_el.text.strip()
+
+            title_text = (title_el.text or "").strip()
+            href_text = (link_el.text or "").strip()
+
+            if not title_text or not href_text:
+                continue
             
             timestamp = None
             if pub_el is not None and pub_el.text:
@@ -164,8 +169,8 @@ class RSSFeedPoller(FeedPoller):
             
             items.append(BaseItem(
                 id=entry_id,
-                title=title,
-                url=href,
+                title=title_text,
+                url=href_text,
                 timestamp=timestamp,
                 summary=summary
             ))
