@@ -11,7 +11,7 @@ from .sec_poller import SECPoller
 # Import base classes for custom poller development from common folder
 from .common.base_poller import BasePoller, BaseItem, PollerConfig
 from .common.specialized_pollers import AtomFeedPoller, RSSFeedPoller, HTMLPoller, APIPoller
-from .common.poller_utils import build_session, strip_tags, extract_primary_text_from_html
+from .common.poller_utils import build_session, strip_tags
 
 __all__ = [
     # Concrete pollers
@@ -32,5 +32,4 @@ __all__ = [
     # Utilities
     "build_session",
     "strip_tags", 
-    "extract_primary_text_from_html",
 ]

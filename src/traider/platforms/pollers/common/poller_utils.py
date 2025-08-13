@@ -5,13 +5,18 @@ import re
 import threading
 import time
 from html import unescape
-from typing import Set
+from typing import Optional, Set
 
 import cloudscraper
 import requests
 from requests import Session
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
+
+from traider.platforms.parsers.webpage_helper.simple_text_extractor import (
+    default_simple_text_extractor,
+    StructuredContent,
+)
 
 
 class ThrottledHTTPAdapter(HTTPAdapter):
@@ -85,39 +90,33 @@ def build_session(
     session.headers.update(default_headers)
     return session
 
+    # Note: legacy extract_primary_text_from_html has been removed.
 
-def extract_primary_text_from_html(html: str, container_patterns: list[str] | None = None) -> str:
-    """Extract article body text using light heuristics.
-    
-    Args:
-        html: HTML content to extract text from
-        container_patterns: List of regex patterns to find specific containers
+
+def extract_text_from_html(html: str, base_url: Optional[str] | None = None) -> Optional[str]:
+    """Extract readable text from an HTML document.
+
+    Utilises the default simple text extractor to obtain the main readable
+    content of a page. If a main content section is not present, the four
+    auxiliary sections (header, navigation, sidebar, footer) are concatenated
+    and returned instead.
     """
-    try:
-        cleaned = _SCRIPT_STYLE_RE.sub(" ", html)
-        
-        scope = cleaned
-        if container_patterns:
-            for pattern in container_patterns:
-                container_match = re.search(pattern, cleaned, flags=re.IGNORECASE)
-                if container_match:
-                    scope = container_match.group(1) if container_match.groups() else container_match.group(0)
-                    break
+    structured: Optional[StructuredContent] = default_simple_text_extractor(
+        html, base_url=base_url
+    )
+    if structured is None:
+        return None
+    if structured.main_content:
+        return structured.main_content
 
-        # Collect <p> blocks within the chosen scope
-        p_matches = re.findall(r"<p[^>]*>([\s\S]*?)</p>", scope, flags=re.IGNORECASE)
-        paragraphs: list[str] = []
-        for raw in p_matches:
-            text = strip_tags(raw)
-            if text:
-                paragraphs.append(text)
-        if paragraphs:
-            return "\n\n".join(paragraphs).strip()
-
-        # Fallback: strip all tags from the scope
-        return strip_tags(scope)
-    except Exception:
-        return ""
+    parts = [
+        structured.header_content,
+        structured.navigation_content,
+        structured.sidebar_content,
+        structured.footer_content,
+    ]
+    combined = "\n\n".join(p for p in parts if p)
+    return combined or None
 
 
 def filter_new_items(items, seen_ids: Set[str], id_attr: str = "id"):

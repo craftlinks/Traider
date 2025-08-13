@@ -85,7 +85,7 @@ def run_pollers_in_background():
         # GlobeNewswirePoller,
         # NewsroomPoller,
         PRNewswirePoller,
-        SECPoller,
+        #SECPoller,
     ]
 
     threads = []

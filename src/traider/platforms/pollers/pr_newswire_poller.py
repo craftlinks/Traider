@@ -37,12 +37,7 @@ class PRNewswirePoller(HTMLPoller):
             default_min_interval=0.25
         )
         
-        # PR Newswire specific container patterns for article extraction
-        container_patterns = [
-            r'<(div|section)[^>]+class="[^\"]*(release-body|articleBody|story-body|post-content)[^\"]*\"[^>]*>([\s\S]*?)</\1>',
-        ]
-        
-        super().__init__(LIST_URL, container_patterns, config)
+        super().__init__(LIST_URL, config)
 
     def get_poller_name(self) -> str:
         return "PR Newswire"

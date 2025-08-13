@@ -8,7 +8,7 @@ from typing import Any, Dict, List
 from urllib.parse import urljoin
 
 from .common.base_poller import BaseItem, PollerConfig
-from .common.poller_utils import strip_tags, extract_primary_text_from_html
+from .common.poller_utils import strip_tags
 from .common.specialized_pollers import APIPoller
 
 logger = logging.getLogger(__name__)
@@ -52,7 +52,7 @@ class AccessNewswirePoller(APIPoller):
         }
         
         super().__init__(api_url_with_params, config, use_cloudscraper=True, extra_headers=extra_headers)
-        self.container_patterns = [r'<div class="mw-100">([\s\S]*?)</div>']
+        # No container-specific extraction; rely on default_simple_text_extractor
 
     def get_poller_name(self) -> str:
         return "Access Newswire"
@@ -83,14 +83,7 @@ class AccessNewswirePoller(APIPoller):
                 
         return items
 
-
-
-    def extract_article_text(self, item: BaseItem) -> str | None:
-        """Extract article text using Access Newswire specific container."""
-        headers = {"Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"}
-        response = self.session.get(item.url, headers=headers, timeout=self.config.article_timeout_seconds)
-        response.raise_for_status()
-        return extract_primary_text_from_html(response.text, self.container_patterns)
+    # Use base APIPoller.extract_article_text with default_simple_text_extractor
 
 
 def run_poller(

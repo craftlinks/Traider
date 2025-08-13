@@ -31,7 +31,6 @@ _CONTENT_TYPES = {
 }
 
 
-
 @dataclass
 class StructuredContent:
     main_content: str | None = None

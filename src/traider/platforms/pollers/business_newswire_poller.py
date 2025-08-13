@@ -25,11 +25,6 @@ class BusinessWirePoller(HTMLPoller):
             default_min_interval=0.25
         )
         
-        # Business Wire specific container patterns for article extraction
-        container_patterns = [
-            r'<div class="bw-release-story">([\s\S]*?)<div class="bw-release-contact">',
-        ]
-        
         # Extra headers to mimic browser behavior
         extra_headers = {
             "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
@@ -43,8 +38,7 @@ class BusinessWirePoller(HTMLPoller):
             "Sec-Fetch-User": "?1",
             "Cache-Control": "max-age=0",
         }
-        
-        super().__init__(LIST_URL, container_patterns, config, use_cloudscraper=True, extra_headers=extra_headers)
+        super().__init__(LIST_URL, config, use_cloudscraper=True, extra_headers=extra_headers)
 
     def get_poller_name(self) -> str:
         return "Business Wire"

@@ -13,8 +13,7 @@ from requests import Response
 from .base_poller import BaseItem, BasePoller
 logger = logging.getLogger(__name__)
 
-from .poller_utils import extract_primary_text_from_html
-
+from .poller_utils import extract_text_from_html
 
 class FeedPoller(BasePoller):
     """Base class for RSS/Atom feed pollers."""
@@ -81,7 +80,7 @@ class FeedPoller(BasePoller):
         headers = {"Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"}
         response = self.session.get(item.url, headers=headers, timeout=self.config.article_timeout_seconds)
         response.raise_for_status()
-        return extract_primary_text_from_html(response.text)
+        return extract_text_from_html(response.text, base_url=item.url)
 
 
 class AtomFeedPoller(FeedPoller):
@@ -189,9 +188,8 @@ class RSSFeedPoller(FeedPoller):
 class HTMLPoller(BasePoller):
     """Base class for HTML scraping pollers."""
     
-    def __init__(self, list_url: str, container_patterns: List[str] | None = None, *args, **kwargs):
+    def __init__(self, list_url: str, *args, **kwargs):
         self.list_url = list_url
-        self.container_patterns = container_patterns or []
         super().__init__(*args, **kwargs)
 
     def fetch_data(self) -> Response:
@@ -217,7 +215,7 @@ class HTMLPoller(BasePoller):
         headers = {"Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"}
         response = self.session.get(item.url, headers=headers, timeout=self.config.article_timeout_seconds)
         response.raise_for_status()
-        return extract_primary_text_from_html(response.text, self.container_patterns)
+        return extract_text_from_html(response.text, base_url=item.url)
 
 
 class APIPoller(BasePoller):
@@ -253,4 +251,4 @@ class APIPoller(BasePoller):
         headers = {"Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"}
         response = self.session.get(item.url, headers=headers, timeout=self.config.article_timeout_seconds)
         response.raise_for_status()
-        return extract_primary_text_from_html(response.text)
+        return extract_text_from_html(response.text, base_url=item.url)
