@@ -1,6 +1,7 @@
+from functools import partial
 import urllib.parse
 from dataclasses import dataclass
-from typing import List, Optional
+from typing import Callable, List, Optional
 
 from bs4 import BeautifulSoup, Comment, Tag
 from bs4.element import PageElement
@@ -28,6 +29,7 @@ _CONTENT_TYPES = {
     'navigation_content': get_navigation_content,
     'sidebar_content': get_sidebar_content,
 }
+
 
 
 @dataclass
@@ -257,3 +259,5 @@ def _new_indent(element: Tag, indent_level: int) -> int:
         ]
         else indent_level
     )
+
+default_simple_text_extractor = partial(simple_text_extractor_base, min_characters=3)

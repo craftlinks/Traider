@@ -43,8 +43,6 @@ class PollerConfig:
     polling_interval_seconds: int
     user_agent: str
     min_request_interval_sec: float
-    max_poll_interval: float = 30.0
-    backoff_multiplier: float = 1.5
     jitter_fraction: float = 0.1
     skip_extraction: bool = False
     timing_enabled: bool = False
@@ -63,8 +61,6 @@ class PollerConfig:
             polling_interval_seconds=int(os.getenv(f"{prefix}_POLL_INTERVAL", default_interval)),
             user_agent=os.getenv(f"{prefix}_USER_AGENT", default_user_agent),
             min_request_interval_sec=float(os.getenv(f"{prefix}_MIN_REQUEST_INTERVAL_SEC", default_min_interval)),
-            max_poll_interval=float(os.getenv(f"{prefix}_MAX_POLL_INTERVAL", 30)),
-            backoff_multiplier=float(os.getenv(f"{prefix}_NOCHANGE_BACKOFF", 1.5)),
             jitter_fraction=float(os.getenv(f"{prefix}_JITTER_FRACTION", 0.1)),
             skip_extraction=os.getenv(f"{prefix}_SKIP_EXTRACTION", "0").lower() in ("1", "true", "yes", "y"),
             timing_enabled=os.getenv(f"{prefix}_TIMING", "0").lower() in ("1", "true", "yes", "y"),
@@ -138,8 +134,6 @@ class BasePoller(ABC):
         if not new_items:
             return
             
-        # Oldest first for chronological output
-        new_items.reverse()
         print(f"[{time.ctime()}] Detected {len(new_items)} new {self.get_poller_name()} item(s):")
         
         for item in new_items:
@@ -163,7 +157,6 @@ class BasePoller(ABC):
     def handle_no_new_items(self) -> None:
         """Handle case when no new items are detected."""
         print(f"[{time.ctime()}] No new items detected. Checking again in {self.current_interval:.1f}s...")
-        self.current_interval = min(self.config.max_poll_interval, self.current_interval * self.config.backoff_multiplier)
 
     def handle_error(self, exc: Exception) -> None:
         """Handle errors during polling."""
@@ -172,11 +165,6 @@ class BasePoller(ABC):
         else:
             print(f"[{time.ctime()}] An unexpected error occurred: {exc}")
         
-        self.current_interval = min(
-            self.config.max_poll_interval, 
-            max(self.current_interval, self.config.polling_interval_seconds) * self.config.backoff_multiplier
-        )
-
     def normalize_timestamp_to_utc_z(self, dt_text: str) -> str | None:
         """Normalize timestamp string to UTC Z ISO format."""
         try:
@@ -195,8 +183,6 @@ class BasePoller(ABC):
             f"Polling interval: {self.config.polling_interval_seconds}s | "
             f"User-Agent: {self.config.user_agent} | "
             f"Min request interval: {self.config.min_request_interval_sec:.3f}s | "
-            f"Max poll: {self.config.max_poll_interval:.1f}s | "
-            f"Backoff: {self.config.backoff_multiplier}x | "
             f"Jitter: ±{int(self.config.jitter_fraction*100)}%"
         )
 
@@ -224,9 +210,6 @@ class BasePoller(ABC):
                 self.handle_error(exc)
 
             # Sleep with jitter
-            if new_items:
-                self.current_interval = float(self.config.polling_interval_seconds)
-            
             jitter = 1.0 + random.uniform(-self.config.jitter_fraction, self.config.jitter_fraction)
             sleep_for = max(1.0, self.current_interval * jitter)
             time.sleep(sleep_for)

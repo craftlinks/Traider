@@ -48,24 +48,13 @@ class PRNewswirePoller(HTMLPoller):
         """Parse PR Newswire earnings list HTML."""
         items = []
 
-        # Narrow to the Latest section if possible  
-        try:
-            latest_section = re.search(
-                r"<h2 class=\"section-header\">\s*Latest[\s\S]*?(?=<h2 class=\"section-header\">|<div class=\"twitter\")",
-                html,
-                flags=re.IGNORECASE,
-            )
-            scope_html = latest_section.group(0) if latest_section else html
-        except Exception:
-            scope_html = html
-
         # Find card anchors with H3 and P content
         card_pattern = re.compile(
-            r"<a[^>]+class=\"[^\"]*newsreleaseconsolidatelink[^\"]*\"[^>]+href=\"([^\"]+)\"[\s\S]*?<h3>([\s\S]*?)</h3>[\s\S]*?(?:<p[^>]*class=\"[^\"]*remove-outline[^\"]*\"[^>]*>([\s\S]*?)</p>)?",
+            r"<a[^>]+class=\"[^\"]*newsreleaseconsolidatelink[^\"]*\"[^>]+href=\"([^\"]+)\"[^>]*>[\s\S]*?<h3[^>]*>([\s\S]*?)</h3>[\s\S]*?(?:<p[^>]*class=\"[^\"]*remove-outline[^\"]*\"[^>]*>([\s\S]*?)</p>)?",
             flags=re.IGNORECASE,
         )
 
-        for match in card_pattern.finditer(scope_html):
+        for match in card_pattern.finditer(html):
             href_rel = (match.group(1) or "").strip()
             h3_html = match.group(2) or ""
             p_html = match.group(3) or ""
