@@ -23,6 +23,7 @@ Note
 
 import logging
 import time
+import threading
 from datetime import datetime
 from dotenv import load_dotenv
 
@@ -39,6 +40,15 @@ from traider.models import (
 )
 from traider.platforms.brokers.interactive_brokers import InteractiveBrokersPlatform
 from traider.platforms.market_data.alpaca import AlpacaMarketData
+from traider.platforms.pollers import (
+    AccessNewswirePoller,
+    BusinessWirePoller,
+    GlobeNewswirePoller,
+    NewsroomPoller,
+    PRNewswirePoller,
+    SECPoller,
+    PollerConfig,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -55,6 +65,29 @@ def wait_for_order_fill(platform: InteractiveBrokersPlatform, order_id: int, tim
     else:
         logger.warning("Order %s not filled within %.0fs (last status: %s)", order_id, timeout, status)
     return did_fill
+
+
+def run_pollers_in_background():
+    """Initializes and runs all pollers in background threads."""
+    poller_classes = [
+        # AccessNewswirePoller,
+        # BusinessWirePoller,
+        # GlobeNewswirePoller,
+        # NewsroomPoller,
+        # PRNewswirePoller,
+        SECPoller,
+    ]
+
+    threads = []
+    for poller_cls in poller_classes:
+        poller = poller_cls()
+
+        thread = threading.Thread(target=poller.run, daemon=True)
+        thread.start()
+        threads.append(thread)
+        logger.info("Started %s in a background thread.", poller_cls.__name__)
+
+    return threads
 
 
 # ---------------------------------------------------------------------------
@@ -76,6 +109,9 @@ def main() -> None:
         nl = logging.getLogger(noisy_logger)
         nl.setLevel(logging.WARNING)
         nl.propagate = False
+
+    # Start news pollers in the background
+    run_pollers_in_background()
 
     symbol = "AAPL"
     quantity = 10
