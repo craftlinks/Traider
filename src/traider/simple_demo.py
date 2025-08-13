@@ -22,9 +22,12 @@ Note
 """
 
 import logging
+import json
 import time
 import threading
-from datetime import datetime
+import queue
+from datetime import datetime, timezone
+from typing import Any
 from dotenv import load_dotenv
 
 from alpaca.data.enums import DataFeed
@@ -49,6 +52,7 @@ from traider.platforms.pollers import (
     SECPoller,
     PollerConfig,
 )
+from traider.platforms.pollers.common.news_pipeline import QueueSink, NewsEvent
 
 logger = logging.getLogger(__name__)
 
@@ -68,26 +72,107 @@ def wait_for_order_fill(platform: InteractiveBrokersPlatform, order_id: int, tim
 
 
 def run_pollers_in_background():
-    """Initializes and runs all pollers in background threads."""
+    """Initializes and runs all pollers in background threads along with a news worker.
+
+    Returns:
+        threads: List of poller threads
+        news_q: Queue carrying NewsEvent objects
+        stop_evt: Event to request worker shutdown
+    """
     poller_classes = [
         # AccessNewswirePoller,
         # BusinessWirePoller,
         # GlobeNewswirePoller,
         # NewsroomPoller,
-        # PRNewswirePoller,
+        PRNewswirePoller,
         SECPoller,
     ]
 
     threads = []
+    news_q: queue.Queue[NewsEvent] = queue.Queue(maxsize=1000)
+    sink = QueueSink(news_q)
+
+    stop_evt = threading.Event()
+
+    def _stringify_value(value: Any) -> str:
+        if value is None:
+            return "<none>"
+        if isinstance(value, (list, dict)):
+            try:
+                return json.dumps(value, ensure_ascii=False)
+            except Exception:
+                return str(value)
+        return str(value)
+
+    def format_news_event(evt: NewsEvent) -> str:
+        # Base envelope fields
+        parts: list[str] = []
+        parts.append(f"source={_stringify_value(evt.source)}")
+        try:
+            recv_iso = datetime.fromtimestamp(float(evt.received_at), tz=timezone.utc).isoformat().replace("+00:00", "Z")
+        except Exception:
+            recv_iso = _stringify_value(evt.received_at)
+        parts.append(f"received_at={recv_iso}")
+
+        # Known item fields (include placeholders when absent)
+        item = evt.item
+        ordered_fields: list[str] = [
+            # BaseItem
+            "id", "title", "url", "timestamp", "summary",
+            # PRNewswire extension
+            "time_et",
+            # SEC extension
+            "items", "items_tier_map", "highest_item_tier", "primary_exhibit_type",
+            "exhibits_found", "has_material_contract_exhibit", "fallback_used", "acceptance_datetime_utc",
+        ]
+
+        seen: set[str] = set()
+        for field_name in ordered_fields:
+            seen.add(field_name)
+            parts.append(f"{field_name}={_stringify_value(getattr(item, field_name, None))}")
+
+        # Include any additional attributes present on the item that we didn't list explicitly
+        try:
+            extra_attrs = getattr(item, "__dict__", {})
+            if isinstance(extra_attrs, dict):
+                for k, v in extra_attrs.items():
+                    if k in seen:
+                        continue
+                    parts.append(f"{k}={_stringify_value(v)}")
+        except Exception:
+            pass
+
+        # Include article/body text as a final field
+        parts.append(f"article_text={_stringify_value(evt.article_text)}")
+
+        return " | ".join(parts)
+
+    def news_worker() -> None:
+        while not stop_evt.is_set():
+            try:
+                evt: NewsEvent = news_q.get(timeout=0.5)
+            except queue.Empty:
+                continue
+            try:
+                logger.info(format_news_event(evt))
+            except Exception as exc:
+                logger.exception("Error handling news event: %s", exc)
+            finally:
+                news_q.task_done()
+
+    worker = threading.Thread(target=news_worker, daemon=True)
+    worker.start()
     for poller_cls in poller_classes:
         poller = poller_cls()
+        # Connect sink so items are emitted to queue
+        poller.set_sink(sink)
 
         thread = threading.Thread(target=poller.run, daemon=True)
         thread.start()
         threads.append(thread)
         logger.info("Started %s in a background thread.", poller_cls.__name__)
 
-    return threads
+    return threads, news_q, stop_evt
 
 
 # ---------------------------------------------------------------------------
@@ -101,7 +186,7 @@ def main() -> None:
 
     logging.basicConfig(
         level=logging.INFO,
-        format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+        format="%(asctime)s [%(levelname)s] [%(threadName)s] %(name)s: %(message)s",
     )
 
     # Suppress noisy INFO logs from ibapi internals
@@ -110,8 +195,8 @@ def main() -> None:
         nl.setLevel(logging.WARNING)
         nl.propagate = False
 
-    # Start news pollers in the background
-    run_pollers_in_background()
+    # Start news pollers in the background with a news processing worker
+    poller_threads, news_q, stop_evt = run_pollers_in_background()
 
     symbol = "AAPL"
     quantity = 10
@@ -222,6 +307,14 @@ def main() -> None:
             logger.exception("Error during open order cancellation: %s", exc)
 
         ib.disconnect()
+
+        # Stop news worker and drain queue
+        stop_evt.set()
+        try:
+            # Give the worker a moment to exit idle waits
+            time.sleep(0.6)
+        except Exception:
+            pass
         logger.info("Done.")
 
 

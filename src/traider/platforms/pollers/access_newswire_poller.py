@@ -3,12 +3,15 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
+import logging
 from typing import Any, Dict, List
 from urllib.parse import urljoin
 
 from .common.base_poller import BaseItem, PollerConfig
 from .common.poller_utils import strip_tags, extract_primary_text_from_html
 from .common.specialized_pollers import APIPoller
+
+logger = logging.getLogger(__name__)
 
 
 # Configuration
@@ -75,19 +78,12 @@ class AccessNewswirePoller(APIPoller):
                 )
                 items.append(item)
             except (KeyError, TypeError) as e:
-                print(f"Skipping article due to parsing error: {e}")
+                logger.warning("Skipping article due to parsing error: %s", e)
                 continue
                 
         return items
 
-    def display_item(self, item: BaseItem) -> None:
-        """Display Access Newswire specific item information."""
-        super().display_item(item)
-        if isinstance(item, ANWItem):
-            if item.company:
-                print(f"     COMPANY: {item.company}")
-            if item.topics:
-                print(f"     TOPICS: {', '.join(item.topics)}")
+
 
     def extract_article_text(self, item: BaseItem) -> str | None:
         """Extract article text using Access Newswire specific container."""

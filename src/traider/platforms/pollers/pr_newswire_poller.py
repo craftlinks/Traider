@@ -3,11 +3,14 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
+import logging
 from urllib.parse import urljoin
 
 from .common.base_poller import BaseItem, PollerConfig  
 from .common.poller_utils import strip_tags
 from .common.specialized_pollers import HTMLPoller
+logger = logging.getLogger(__name__)
+
 
 
 # Configuration
@@ -83,12 +86,6 @@ class PRNewswirePoller(HTMLPoller):
             ))
 
         return items
-
-    def display_item(self, item: BaseItem) -> None:
-        """Display PR Newswire specific item information."""
-        super().display_item(item)
-        if isinstance(item, PRNItem) and item.time_et:
-            print(f"     TIME (ET): {item.time_et}")
 
 
 def run_poller(

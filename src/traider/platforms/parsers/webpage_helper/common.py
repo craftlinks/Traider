@@ -1,6 +1,8 @@
 import json
 import re
+import logging
 from typing import List, Optional, Tuple
+logger = logging.getLogger(__name__)
 
 from bs4 import BeautifulSoup, Comment, Tag
 from bs4.element import PageElement
@@ -596,14 +598,14 @@ def load_from_json(file_path: str) -> Optional[Tuple[str, str]]:
                     data.get('url', ''),
                 )
             else:
-                print("The JSON file does not contain an 'body' key.")
+                logger.warning("The JSON file does not contain a 'body' key.")
                 return None
     except FileNotFoundError:
-        print(f'Error: File not found at {file_path}')
+        logger.error("File not found at %s", file_path)
         return None
     except json.JSONDecodeError:
-        print(f'Error: Invalid JSON format in {file_path}')
+        logger.error("Invalid JSON format in %s", file_path)
         return None
     except Exception as e:
-        print(f'An unexpected error occurred: {e}')
+        logger.exception("An unexpected error occurred while loading JSON: %s", e)
         return None

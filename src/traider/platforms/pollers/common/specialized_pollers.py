@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import xml.etree.ElementTree as ET
 from abc import abstractmethod
+import logging
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -10,6 +11,8 @@ import requests
 from requests import Response
 
 from .base_poller import BaseItem, BasePoller
+logger = logging.getLogger(__name__)
+
 from .poller_utils import extract_primary_text_from_html
 
 
@@ -36,7 +39,10 @@ class FeedPoller(BasePoller):
         
         if response.status_code == 304:
             # Handle 304 Not Modified
-            print(f"[{datetime.now().strftime('%c')}] Feed not modified (304). Next check in {self.config.polling_interval_seconds}s...")
+            logger.info(
+                "Feed not modified (304). Next check in %ds...",
+                self.config.polling_interval_seconds,
+            )
             return response
         
         response.raise_for_status()

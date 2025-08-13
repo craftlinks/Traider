@@ -1,4 +1,5 @@
 from typing import Optional, Callable, Set
+import logging
 import os
 import threading
 from alpaca.data.historical import StockHistoricalDataClient
@@ -7,6 +8,8 @@ from alpaca.data.live import StockDataStream
 from alpaca.data.enums import DataFeed
 from traider.interfaces.market_data import MarketDataInterface
 from traider.models import Trade, Quote
+
+logger = logging.getLogger(__name__)
 
 class AlpacaMarketData(MarketDataInterface):
     """
@@ -48,7 +51,7 @@ class AlpacaMarketData(MarketDataInterface):
                 )
             return None
         except Exception as e:
-            print(f"Error fetching latest trade for {symbol}: {e}")
+            logger.error("Error fetching latest trade for %s: %s", symbol, e, exc_info=e)
             return None
 
     def get_latest_quote(self, symbol: str) -> Optional[Quote]:
@@ -70,7 +73,7 @@ class AlpacaMarketData(MarketDataInterface):
                 )
             return None
         except Exception as e:
-            print(f"Error fetching latest quote for {symbol}: {e}")
+            logger.error("Error fetching latest quote for %s: %s", symbol, e, exc_info=e)
             return None
 
     def _ensure_stream_running(self) -> None:
@@ -93,7 +96,7 @@ class AlpacaMarketData(MarketDataInterface):
             try:
                 handler(trade)
             except Exception as e:
-                print(f"Trade handler error: {e}")
+                logger.exception("Trade handler error: %s", e)
 
         # Register handler and track subscription
         assert self._stream is not None
@@ -114,7 +117,7 @@ class AlpacaMarketData(MarketDataInterface):
             try:
                 handler(quote)
             except Exception as e:
-                print(f"Quote handler error: {e}")
+                logger.exception("Quote handler error: %s", e)
 
         assert self._stream is not None
         self._stream.subscribe_quotes(_on_quote, symbol)

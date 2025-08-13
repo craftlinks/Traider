@@ -2,12 +2,13 @@
 from __future__ import annotations
 
 import os
+import logging
 import random
 import time
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional, Set
+from typing import Any, Dict, List, Optional, Set, Callable
 
 import requests
 from dotenv import load_dotenv, find_dotenv
@@ -26,6 +27,8 @@ else:
     # print("[DEBUG] .env not found starting from CWD or module path")
     pass
 
+
+logger = logging.getLogger(__name__)
 
 @dataclass(frozen=True)
 class BaseItem:
@@ -90,6 +93,8 @@ class BasePoller(ABC):
         # Cache headers for conditional requests
         self.feed_etag: Optional[str] = None
         self.feed_last_modified: Optional[str] = None
+        # Optional sink to emit processed items to a downstream consumer
+        self._sink: Callable[[str, BaseItem, str | None], None] | None = None
 
     @abstractmethod
     def get_poller_name(self) -> str:
@@ -111,34 +116,21 @@ class BasePoller(ABC):
         """Extract full article text from an item's URL."""
         pass
 
-    def display_item(self, item: BaseItem) -> None:
-        """Display an item's information. Can be overridden for custom display."""
-        print(f"  -> Title: {item.title}")
-        if item.timestamp:
-            print(f"     TIMESTAMP: {item.timestamp}")
-        if item.summary:
-            print(f"     SUMMARY: {item.summary[:160]}")
-        print(f"     URL: {item.url}")
+    def set_sink(self, sink: Callable[[str, BaseItem, str | None], None]) -> None:
+        """Register a sink callable to receive processed items.
 
-    def display_article_text(self, item: BaseItem, article_text: str | None) -> None:
-        """Display article text preview. Can be overridden for custom display."""
-        if article_text:
-            preview = article_text[:300].replace("\n", " ")
-            print("   [ARTICLE] Extracted text. Preview:")
-            print(f"     {preview}...")
-        else:
-            print("   [ARTICLE] No extractable text found.")
+        The sink will be called with (poller_name, item, article_text) for each
+        new item after optional extraction.
+        """
+        self._sink = sink
 
     def handle_new_items(self, new_items: List[BaseItem]) -> None:
         """Process and display new items."""
         if not new_items:
             return
-            
-        print(f"[{time.ctime()}] Detected {len(new_items)} new {self.get_poller_name()} item(s):")
         
         for item in new_items:
-            self.display_item(item)
-            
+            article_text: str | None = None
             if not self.config.skip_extraction:
                 try:
                     t0 = time.monotonic()
@@ -147,23 +139,28 @@ class BasePoller(ABC):
                     
                     if self.config.timing_enabled:
                         fetch_ms = (t1 - t0) * 1000.0
-                        print(f"     [TIMING] Article fetch: {fetch_ms:.1f} ms")
+                        logger.debug("[TIMING] Article fetch: %.1f ms", fetch_ms)
                     
-                    self.display_article_text(item, article_text)
                 except Exception as article_exc:
-                    print(f"   [ARTICLE] Error while fetching article: {article_exc}")
-            print("")
+                    logger.exception("[ARTICLE] Error while fetching article: %s", article_exc)
+            
+            # Emit to sink if configured
+            if self._sink is not None:
+                try:
+                    self._sink(self.get_poller_name(), item, article_text)
+                except Exception as sink_exc:
+                    logger.exception("[SINK] Error while emitting item: %s", sink_exc)
 
     def handle_no_new_items(self) -> None:
         """Handle case when no new items are detected."""
-        print(f"[{time.ctime()}] No new items detected. Checking again in {self.current_interval:.1f}s...")
+        logger.debug("No new items detected. Checking again in %.1fs...", self.current_interval)
 
     def handle_error(self, exc: Exception) -> None:
         """Handle errors during polling."""
         if isinstance(exc, requests.exceptions.RequestException):
-            print(f"[{time.ctime()}] ERROR: Could not connect to {self.get_poller_name()}. {exc}")
+            logger.error("Could not connect to %s. %s", self.get_poller_name(), exc, exc_info=exc)
         else:
-            print(f"[{time.ctime()}] An unexpected error occurred: {exc}")
+            logger.error("An unexpected error occurred: %s", exc, exc_info=exc)
         
     def normalize_timestamp_to_utc_z(self, dt_text: str) -> str | None:
         """Normalize timestamp string to UTC Z ISO format."""
@@ -176,18 +173,18 @@ class BasePoller(ABC):
             return None
 
     def print_startup_info(self) -> None:
-        """Print startup information."""
-        print(f"Starting {self.get_poller_name()} Poller...")
-        print("-" * (len(self.get_poller_name()) + 20))
-        print(
-            f"Polling interval: {self.config.polling_interval_seconds}s | "
-            f"User-Agent: {self.config.user_agent} | "
-            f"Min request interval: {self.config.min_request_interval_sec:.3f}s | "
-            f"Jitter: ±{int(self.config.jitter_fraction*100)}%"
+        """Log startup information."""
+        logger.info("Starting %s Poller...", self.get_poller_name())
+        logger.info(
+            "Polling interval: %ds | User-Agent: %s | Min request interval: %.3fs | Jitter: ±%d%%",
+            self.config.polling_interval_seconds,
+            self.config.user_agent,
+            self.config.min_request_interval_sec,
+            int(self.config.jitter_fraction * 100),
         )
 
         if "example.com" in self.config.user_agent:
-            print(f"[WARN] Your User-Agent appears to be a placeholder. Consider setting a real contact.")
+            logger.warning("Your User-Agent appears to be a placeholder. Consider setting a real contact.")
 
     def run_polling_loop(self) -> None:
         """Main polling loop using template method pattern."""

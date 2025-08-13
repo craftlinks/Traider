@@ -3,11 +3,14 @@ from __future__ import annotations
 
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass
+import logging
 from datetime import timezone
 from typing import List, Optional, Sequence, Tuple
 
 from .common.base_poller import BaseItem, PollerConfig
 from .common.specialized_pollers import AtomFeedPoller
+
+logger = logging.getLogger(__name__)
 
 
 # Configuration
@@ -143,30 +146,6 @@ class GlobeNewswirePoller(AtomFeedPoller):
             ))
 
         return items
-
-    def display_item(self, item: BaseItem) -> None:
-        """Display Globe Newswire specific item information."""
-        super().display_item(item)
-        if isinstance(item, GlobeNewswireItem):
-            if item.updated_utc:
-                print(f"     UPDATED (UTC): {item.updated_utc}")
-            if item.modified_utc:
-                print(f"     DC MODIFIED(UTC): {item.modified_utc}")
-            if item.identifier:
-                print(f"     IDENTIFIER: {item.identifier}")
-            if item.subjects:
-                print(f"     SUBJECTS: {', '.join(item.subjects)}")
-            if item.keywords:
-                print(f"     KEYWORDS: {', '.join(item.keywords)}")
-            if item.language:
-                print(f"     LANG: {item.language}")
-            if item.publisher:
-                print(f"     PUBLISHER: {item.publisher}")
-            if item.contributor:
-                print(f"     CONTRIBUTOR: {item.contributor}")
-            if item.categories:
-                cat_strs = [f"{term} ({scheme})" if scheme else term for term, scheme in item.categories]
-                print(f"     CATEGORIES: {', '.join(cat_strs)}")
 
 
 def run_poller(
