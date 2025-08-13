@@ -46,6 +46,9 @@ import html
 import re
 import time
 from typing import Final, Optional, List, Dict
+
+# Reuse shared HTML readability extractor from poller utils
+from traider.platforms.pollers.common.poller_utils import extract_text_from_html
 from collections import OrderedDict
 from dataclasses import dataclass
 from datetime import datetime
@@ -445,12 +448,13 @@ def parse_exhibit_99_1(
         if not exhibit_html:
             return None
 
-        clean_text = _clean_html_to_text(exhibit_html)
-        # Final compaction: collapse 3+ consecutive blank lines to max 1
-        clean_text = re.sub(r"\n{3,}", "\n\n", clean_text)
-        # Also normalize excessive internal spaces
-        clean_text = re.sub(r"[\t\x0b\x0c\r ]+", " ", clean_text)
-        clean_text = re.sub(r" *\n *", "\n", clean_text).strip()
+        clean_text = extract_text_from_html(exhibit_html, base_url=None)
+        if clean_text is not None:
+            # Final compaction: collapse 3+ consecutive blank lines to max 1
+            clean_text = re.sub(r"\n{3,}", "\n\n", clean_text)
+            # Also normalize excessive internal spaces
+            clean_text = re.sub(r"[\t\x0b\x0c\r ]+", " ", clean_text)
+            clean_text = re.sub(r" *\n *", "\n", clean_text).strip()
 
         _ = time.perf_counter() - t0  # time kept for potential logging
         return clean_text or None
@@ -522,10 +526,11 @@ def analyze_and_extract_8k(
 
         primary_text: Optional[str] = None
         if primary_html:
-            primary_text = _clean_html_to_text(primary_html)
-            primary_text = re.sub(r"\n{3,}", "\n\n", primary_text)
-            primary_text = re.sub(r"[\t\x0b\x0c\r ]+", " ", primary_text)
-            primary_text = re.sub(r" *\n *", "\n", primary_text).strip() or None
+            primary_text = extract_text_from_html(primary_html, base_url=None)
+            if primary_text is not None:
+                primary_text = re.sub(r"\n{3,}", "\n\n", primary_text)
+                primary_text = re.sub(r"[\t\x0b\x0c\r ]+", " ", primary_text)
+                primary_text = re.sub(r" *\n *", "\n", primary_text).strip() or None
 
         fallback_used = False
         fallback_text: Optional[str] = None
@@ -533,11 +538,12 @@ def analyze_and_extract_8k(
             # Fallback to the 8-K body
             body_html = _extract_document_text_by_types(full_text, ["8-k", "8-k/a"])  # type: ignore[arg-type]
             if body_html:
-                fallback_text = _clean_html_to_text(body_html)
-                fallback_text = re.sub(r"\n{3,}", "\n\n", fallback_text)
-                fallback_text = re.sub(r"[\t\x0b\x0c\r ]+", " ", fallback_text)
-                fallback_text = re.sub(r" *\n *", "\n", fallback_text).strip() or None
-                fallback_used = fallback_text is not None
+                fallback_text = extract_text_from_html(body_html, base_url=None)
+                if fallback_text is not None:
+                    fallback_text = re.sub(r"\n{3,}", "\n\n", fallback_text)
+                    fallback_text = re.sub(r"[\t\x0b\x0c\r ]+", " ", fallback_text)
+                    fallback_text = re.sub(r" *\n *", "\n", fallback_text).strip() or None
+                    fallback_used = fallback_text is not None
 
         return EightKParseResult(
             items=items,
