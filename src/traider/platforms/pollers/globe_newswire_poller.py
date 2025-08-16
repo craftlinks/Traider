@@ -4,7 +4,7 @@ from __future__ import annotations
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass
 import logging
-from datetime import timezone
+from datetime import datetime, timezone
 from typing import List, Optional, Sequence, Tuple
 
 from .common.base_poller import BaseItem, PollerConfig
@@ -19,10 +19,10 @@ ATOM_FEED_URL: str = (
 )
 
 
-@dataclass(frozen=True)
+@dataclass
 class GlobeNewswireItem(BaseItem):
     """Globe Newswire specific item with Dublin Core metadata."""
-    updated_utc: str | None = None
+    updated_utc: datetime | None = None
     modified_utc: str | None = None
     identifier: str | None = None
     language: str | None = None

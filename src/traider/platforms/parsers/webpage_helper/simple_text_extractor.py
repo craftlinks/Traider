@@ -259,4 +259,4 @@ def _new_indent(element: Tag, indent_level: int) -> int:
         else indent_level
     )
 
-default_simple_text_extractor = partial(simple_text_extractor_base, min_characters=3)
+simple_text_extractor = partial(simple_text_extractor_base, min_characters=1)

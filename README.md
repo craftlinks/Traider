@@ -188,3 +188,48 @@ python -m traider.platforms.pollers.sec_poller
 - Be aware of shared NAT IPs (cloud, office) that may aggregate traffic.
 
 Implementation lives in `src/traider/platforms/pollers/sec_poller.py` (polling, throttle, conditional GETs) and `src/traider/platforms/parsers/sec/sec_8k_parser.py` (exhibit parsing and LRU caches).
+
+## Persistent Cache & Duplicate Detection
+
+Traider ships with a **process-wide, persistent LRU cache** that is used mainly to
+remember *seen item identifiers* across restarts so pollers don’t emit the same
+news twice.  It is implemented with [`diskcache`](https://grantjenks.com/docs/diskcache/) and can
+be swapped out easily via the `traider.interfaces.CacheInterface`.
+
+### How it works
+* A single cache instance is created lazily on first use (`get_shared_cache()`).
+* By default it lives in `$HOME/.traider_cache` and keeps **50 000** items.
+* When the item limit is exceeded the **least-recently-used** IDs are evicted.
+* The cache is flushed automatically on graceful shutdown.
+
+### CLI flags
+You can influence cache behaviour from the command line **for any module** that
+imports Traider — the flags are consumed early and then stripped from
+`sys.argv`, so your own `argparse` set-up will ignore them.
+
+```bash
+python -m traider.platforms.pollers.sec_poller --no-cache      # disable persistence (in-memory only)
+python -m traider.platforms.pollers.pr_newswire_poller --clear-cache  # wipe cache on start
+```
+
+### Environment variables
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `TRAIDER_CACHE_DIR` | `~/.traider_cache` | Directory for cache files |
+| `TRAIDER_CACHE_MAX_ITEMS` | `50000` | Hard cap on number of items (LRU eviction) |
+| `TRAIDER_CACHE_SIZE_LIMIT` | *unlimited* | Byte limit passed to `diskcache.Cache` |
+| `TRAIDER_NO_CACHE` | `0` | Set to `1/true/yes` to disable persistence |
+| `TRAIDER_CLEAR_CACHE` | `0` | Set to `1/true/yes` to empty the cache at start |
+
+All environment variables override the defaults **before** the cache is created,
+so you can also export them in your shell or `.env` file:
+
+```bash
+export TRAIDER_CACHE_DIR=/var/cache/traider
+export TRAIDER_CACHE_MAX_ITEMS=100000
+python -m traider.platforms.pollers.sec_poller
+```
+
+If you do not need persistence at all (e.g. inside stateless containers) just
+run with `--no-cache` or set `TRAIDER_NO_CACHE=1`; an in-memory LRU cache will
+be used instead and discarded on exit.

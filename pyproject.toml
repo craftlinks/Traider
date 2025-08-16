@@ -19,6 +19,7 @@ dependencies = [
     "python-dotenv>=1.0.0",
     "requests>=2.32.3",
     "urllib3>=2,<3",
+    "diskcache>=5.6.3",
 ]
 
 [tool.setuptools.packages.find]

@@ -1,10 +1,12 @@
 """PR Newswire HTML poller - refactored version."""
 from __future__ import annotations
 
+import datetime
 import re
 from dataclasses import dataclass
 import logging
 from urllib.parse import urljoin
+from zoneinfo import ZoneInfo
 
 from .common.base_poller import BaseItem, PollerConfig  
 from .common.poller_utils import strip_tags
@@ -13,17 +15,37 @@ logger = logging.getLogger(__name__)
 
 
 
+def _parse_et_time_to_utc(time_str: str | None) -> datetime.datetime | None:
+    """Parse a timestamp string like 'Aug 15, 2025, 17:04 ET' to a UTC datetime."""
+    if not time_str:
+        return None
+
+    # Expects "MONTH DAY, YEAR, HH:MM ET"
+    cleaned_str = time_str.replace(" ET", "").strip()
+
+    try:
+        # Parse the naive datetime
+        naive_dt = datetime.datetime.strptime(cleaned_str, "%b %d, %Y, %H:%M")
+
+        # Localize it to America/New_York, which handles EDT/EST automatically
+        et_zone = ZoneInfo("America/New_York")
+        aware_dt_et = naive_dt.replace(tzinfo=et_zone)
+
+        # Convert to UTC
+        return aware_dt_et.astimezone(datetime.timezone.utc)
+    except ValueError:
+        logger.warning("Could not parse timestamp from PR Newswire: '%s'", time_str)
+        return None
+    except Exception:
+        logger.warning("Failed to parse time string: '%s'", time_str, exc_info=True)
+        return None
+
+
 # Configuration
 LIST_URL: str = (
     "https://www.prnewswire.com/news-releases/financial-services-latest-news/earnings-list/?page=1&pagesize=10"
 )
 BASE_URL: str = "https://www.prnewswire.com"
-
-
-@dataclass(frozen=True) 
-class PRNItem(BaseItem):
-    """PR Newswire specific item with time in ET."""
-    time_et: str | None = None
 
 
 class PRNewswirePoller(HTMLPoller):
@@ -64,20 +86,20 @@ class PRNewswirePoller(HTMLPoller):
 
             # Extract time from <small> tag within h3
             time_match = re.search(r"<small[^>]*>([\s\S]*?)</small>", h3_html, flags=re.IGNORECASE)
-            time_et = None
+            time_et_str = None
             if time_match:
-                time_et = strip_tags(time_match.group(1)) or None
+                time_et_str = strip_tags(time_match.group(1)) or None
                 h3_html = h3_html.replace(time_match.group(0), " ")
                 
             title = strip_tags(h3_html)
             summary = strip_tags(p_html) if p_html else None
 
-            items.append(PRNItem(
+            items.append(BaseItem(
                 id=url,  # Use URL as stable ID
                 title=title,
                 url=url, 
                 summary=summary,
-                time_et=time_et
+                timestamp=_parse_et_time_to_utc(time_et_str)
             ))
 
         return items

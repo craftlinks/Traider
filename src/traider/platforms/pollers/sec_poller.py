@@ -1,6 +1,7 @@
 """SEC 8-K filings Atom feed poller - refactored version."""
 from __future__ import annotations
 
+from datetime import datetime
 import logging
 from dataclasses import dataclass
 from .common.base_poller import BaseItem, PollerConfig
@@ -31,7 +32,7 @@ ATOM_FEED_URL: str = (
 )
 
 
-@dataclass(frozen=True)
+@dataclass
 class SECItem(BaseItem):
     """SEC 8-K item enriched with structured metadata for downstream workers."""
     items: list[str] | None = None
@@ -41,7 +42,7 @@ class SECItem(BaseItem):
     exhibits_found: list[str] | None = None
     has_material_contract_exhibit: bool = False
     fallback_used: bool = False
-    acceptance_datetime_utc: str | None = None
+    acceptance_datetime_utc: datetime | None = None
 
 
 class SECPoller(AtomFeedPoller):
@@ -112,6 +113,7 @@ class SECPoller(AtomFeedPoller):
                                 exhibits_found=result.exhibits_found,
                                 has_material_contract_exhibit=result.has_material_contract_exhibit,
                                 fallback_used=result.fallback_used,
+                                article_text=article_text,
                                 acceptance_datetime_utc=result.acceptance_datetime_utc,
                             )
             except Exception as parse_exc:
@@ -120,7 +122,7 @@ class SECPoller(AtomFeedPoller):
             # Emit downstream via sink if configured
             if self._sink is not None:
                 try:
-                    self._sink(self.get_poller_name(), sec_item, article_text)
+                    self._sink(self.get_poller_name(), sec_item)
                 except Exception as sink_exc:
                     logger.exception("[SINK] Error while emitting item: %s", sink_exc)
 

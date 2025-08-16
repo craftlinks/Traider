@@ -20,7 +20,7 @@ BASE_URL: str = "https://www.accessnewswire.com"
 DEFAULT_PAGE_SIZE: int = 20
 
 
-@dataclass(frozen=True)
+@dataclass
 class ANWItem(BaseItem):
     """Access Newswire specific item with additional fields."""
     company: str | None = None

@@ -82,10 +82,10 @@ def run_pollers_in_background():
     poller_classes = [
         # AccessNewswirePoller,
         # BusinessWirePoller,
-        # GlobeNewswirePoller,
+        GlobeNewswirePoller,
         # NewsroomPoller,
         #PRNewswirePoller,
-        SECPoller,
+        # SECPoller,
     ]
 
     threads = []
@@ -143,7 +143,7 @@ def run_pollers_in_background():
             pass
 
         # Include article/body text as a final field
-        parts.append(f"article_text={_stringify_value(evt.article_text)}")
+        parts.append(f"article_text={_stringify_value(evt.item.article_text)}")
 
         return " | ".join(parts)
 

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from traider.platforms.pollers.common.base_poller import BaseItem
+
 """
 The Hierarchy of 8-K Item Signals (for reader reference)
 
@@ -403,7 +405,7 @@ class EightKParseResult:
     has_material_contract_exhibit: bool
     fallback_used: bool
     fallback_text: Optional[str]
-    acceptance_datetime_utc: Optional[str]
+    acceptance_datetime_utc: Optional[datetime]
 
 
 def _clean_html_to_text(raw_html: str) -> str:
@@ -555,7 +557,7 @@ def analyze_and_extract_8k(
             has_material_contract_exhibit=has_material_contract,
             fallback_used=fallback_used,
             fallback_text=fallback_text,
-            acceptance_datetime_utc=acceptance_iso_utc,
+            acceptance_datetime_utc=BaseItem.parse_iso_utc(acceptance_iso_utc) if acceptance_iso_utc else None,
         )
     except Exception:
         return None

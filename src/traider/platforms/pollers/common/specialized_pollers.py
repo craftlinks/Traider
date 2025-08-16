@@ -65,13 +65,12 @@ class FeedPoller(BasePoller):
             return []  # No new items
         return self.parse_feed_entries(data.content)
 
-    def normalize_rfc822_to_utc_z(self, dt_text: str) -> str | None:
-        """Parse RFC-822 date (RSS format) to UTC Z ISO format."""
+    def normalize_rfc822_to_utc_z(self, dt_text: str) -> datetime | None:
+        """Parse RFC-822 date (RSS format) into a timezone-aware UTC datetime."""
         try:
             from email.utils import parsedate_to_datetime
             dt = parsedate_to_datetime(dt_text.strip())
-            dt_utc = dt.astimezone(timezone.utc)
-            return dt_utc.replace(microsecond=0).isoformat().replace("+00:00", "Z")
+            return dt.astimezone(timezone.utc)
         except Exception:
             return None
 
@@ -126,7 +125,7 @@ class AtomFeedPoller(FeedPoller):
                 id=entry_id,
                 title=title, 
                 url=href,
-                timestamp=timestamp
+                timestamp=timestamp,
             ))
         
         return items

@@ -20,7 +20,6 @@ class NewsEvent:
     """
     source: str
     item: BaseItem
-    article_text: Optional[str]
     received_at: float = time.time()
 
 
@@ -35,9 +34,9 @@ class QueueSink:
         self._q = q
         self._timeout = max(0.0, float(block_timeout_seconds))
 
-    def __call__(self, source: str, item: BaseItem, article_text: Optional[str]) -> None:
+    def __call__(self, source: str, item: BaseItem) -> None:
         try:
-            self._q.put(NewsEvent(source=source, item=item, article_text=article_text), timeout=self._timeout)
+            self._q.put(NewsEvent(source=source, item=item), timeout=self._timeout)
         except queue.Full:
             # Timed out while waiting for space; drop silently.
             pass

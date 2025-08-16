@@ -5,7 +5,7 @@ import re
 import threading
 import time
 from html import unescape
-from typing import Optional, Set
+from typing import Optional
 
 import cloudscraper
 import requests
@@ -14,9 +14,10 @@ from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
 from traider.platforms.parsers.webpage_helper.simple_text_extractor import (
-    default_simple_text_extractor,
+    simple_text_extractor,
     StructuredContent,
 )
+from traider.interfaces import CacheInterface
 
 
 class ThrottledHTTPAdapter(HTTPAdapter):
@@ -101,7 +102,7 @@ def extract_text_from_html(html: str, base_url: Optional[str] | None = None) -> 
     auxiliary sections (header, navigation, sidebar, footer) are concatenated
     and returned instead.
     """
-    structured: Optional[StructuredContent] = default_simple_text_extractor(
+    structured: Optional[StructuredContent] = simple_text_extractor(
         html, base_url=base_url
     )
     if structured is None:
@@ -119,12 +120,21 @@ def extract_text_from_html(html: str, base_url: Optional[str] | None = None) -> 
     return combined or None
 
 
-def filter_new_items(items, seen_ids: Set[str], id_attr: str = "id"):
-    """Filter items to only return new ones not in seen_ids."""
-    new_items = []
+def filter_new_items(
+    items,
+    cache: CacheInterface,
+    *,
+    id_attr: str = "id",
+) -> list:
+    """Return list of items whose *id* has not been seen before.
+
+    The provided *cache* must implement :meth:`CacheInterface.add`.  For each
+    item we attempt to ``cache.add(item_id)``.  The item is considered *new*
+    only if the call returns ``True`` (meaning the ID was absent previously).
+    """
+    new_items: list = []
     for item in items:
         item_id = getattr(item, id_attr)
-        if item_id not in seen_ids:
+        if cache.add(item_id):
             new_items.append(item)
-            seen_ids.add(item_id)
     return new_items

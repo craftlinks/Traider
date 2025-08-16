@@ -8,13 +8,14 @@ import time
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional, Set, Callable
+from typing import Any, Dict, List, Optional, Callable
 
 import requests
 from dotenv import load_dotenv, find_dotenv
 from requests import Response, Session
 
 from .poller_utils import build_session, filter_new_items
+from traider.platforms.cache import get_shared_cache
 
 # Use find_dotenv to locate the nearest .env starting from the CWD and moving up
 # This is more reliable when poller modules live in nested sub-packages but are
@@ -30,14 +31,22 @@ else:
 
 logger = logging.getLogger(__name__)
 
-@dataclass(frozen=True)
+@dataclass
 class BaseItem:
     """Base item with common fields across all pollers."""
     id: str
     title: str
     url: str
-    timestamp: str | None = None
+    timestamp: datetime | None = None
     summary: str | None = None
+    article_text: str | None = None
+
+    @staticmethod
+    def parse_iso_utc(ts: str) -> datetime:
+        """Parse an ISO-8601 timestamp (e.g. '2025-03-01T14:07:23Z') into a
+        timezone-aware UTC datetime instance.
+        """
+        return datetime.fromisoformat(ts.replace("Z", "+00:00")).astimezone(timezone.utc)
 
 
 @dataclass
@@ -81,7 +90,8 @@ class BasePoller(ABC):
         extra_headers: dict | None = None
     ):
         self.config = config
-        self.seen_ids: Set[str] = set()
+        # Shared persistent cache for duplicate detection
+        self.cache = get_shared_cache()
         self.session = build_session(
             config.user_agent, 
             config.min_request_interval_sec, 
@@ -94,7 +104,7 @@ class BasePoller(ABC):
         self.feed_etag: Optional[str] = None
         self.feed_last_modified: Optional[str] = None
         # Optional sink to emit processed items to a downstream consumer
-        self._sink: Callable[[str, BaseItem, str | None], None] | None = None
+        self._sink: Callable[[str, BaseItem], None] | None = None
 
     @abstractmethod
     def get_poller_name(self) -> str:
@@ -116,11 +126,10 @@ class BasePoller(ABC):
         """Extract full article text from an item's URL."""
         pass
 
-    def set_sink(self, sink: Callable[[str, BaseItem, str | None], None]) -> None:
+    def set_sink(self, sink: Callable[[str, BaseItem], None]) -> None:
         """Register a sink callable to receive processed items.
 
-        The sink will be called with (poller_name, item, article_text) for each
-        new item after optional extraction.
+        The sink will be called with (poller_name, item) for each new item.
         """
         self._sink = sink
 
@@ -140,14 +149,17 @@ class BasePoller(ABC):
                     if self.config.timing_enabled:
                         fetch_ms = (t1 - t0) * 1000.0
                         logger.debug("[TIMING] Article fetch: %.1f ms", fetch_ms)
+
                     
                 except Exception as article_exc:
                     logger.exception("[ARTICLE] Error while fetching article: %s", article_exc)
+
+                item.article_text = article_text
             
             # Emit to sink if configured
             if self._sink is not None:
                 try:
-                    self._sink(self.get_poller_name(), item, article_text)
+                    self._sink(self.get_poller_name(), item)
                 except Exception as sink_exc:
                     logger.exception("[SINK] Error while emitting item: %s", sink_exc)
 
@@ -162,13 +174,12 @@ class BasePoller(ABC):
         else:
             logger.error("An unexpected error occurred: %s", exc, exc_info=exc)
         
-    def normalize_timestamp_to_utc_z(self, dt_text: str) -> str | None:
-        """Normalize timestamp string to UTC Z ISO format."""
+    def normalize_timestamp_to_utc_z(self, dt_text: str) -> datetime | None:
+        """Normalize timestamp string to a timezone-aware UTC datetime."""
         try:
             txt = dt_text.strip()
             dt = datetime.fromisoformat(txt.replace("Z", "+00:00"))
-            dt_utc = dt.astimezone(timezone.utc)
-            return dt_utc.replace(microsecond=0).isoformat().replace("+00:00", "Z")
+            return dt.astimezone(timezone.utc)
         except Exception:
             return None
 
@@ -195,7 +206,7 @@ class BasePoller(ABC):
             try:
                 data = self.fetch_data()
                 items = self.parse_items(data)
-                new_items = filter_new_items(items, self.seen_ids)
+                new_items = filter_new_items(items, self.cache)
                 
                 if new_items:
                     self.handle_new_items(new_items)
