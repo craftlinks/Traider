@@ -318,5 +318,103 @@ def main() -> None:
         logger.info("Done.")
 
 
+# ---------------------------------------------------------------------------
+# Crawlee screenshot server helpers
+# ---------------------------------------------------------------------------
+
+
+def run_crawlee_server(host: str = "127.0.0.1", port: int = 8000) -> None:
+    """Run the Traider Crawlee screenshot server.
+
+    This starts a FastAPI application powered by ``PlaywrightCrawler`` that can
+    capture screenshots of arbitrary URLs on demand. Navigate to e.g.::
+
+        http://{host}:{port}/scrape?url=https://www.google.com
+
+    to obtain a PNG screenshot of Google homepage.
+    """
+
+    import uvicorn # Local import to avoid the heavy dependency in trading mode
+
+    from traider.crawlee_server.server import app as crawlee_app
+
+    logger.info("Starting Crawlee screenshot server on %s:%d ...", host, port)
+    uvicorn.run(crawlee_app, host=host, port=port, log_level="info")
+
+
+async def _direct_scrape(url: str, host: str = "127.0.0.1", port: int = 8000) -> None:
+    """Run the Crawlee screenshot server *in-process* and fetch screenshot for *url*.
+
+    This is useful for tests or automated workflows where spinning up a
+    separate HTTP server is undesirable. It leverages httpx's ASGI testing
+    facilities to call the FastAPI app directly in memory.
+    """
+
+    import httpx
+    from asgi_lifespan import LifespanManager
+
+    from traider.crawlee_server.server import app as crawlee_app
+
+    # Use an in-memory ASGI transport so no network sockets are involved. This
+    # approach works across httpx versions (some of which do not expose the
+    # `app=` parameter on AsyncClient).
+    transport = httpx.ASGITransport(app=crawlee_app)  # lifespan handled separately
+
+    # Ensure FastAPI lifespan (startup/shutdown) runs so the crawler initialises.
+    async with LifespanManager(crawlee_app):
+        async with httpx.AsyncClient(transport=transport, base_url="http://test") as ac:
+            response = await ac.get("/scrape", params={"url": url})
+            response.raise_for_status()
+            logger.info("Scrape result: %s", response.json())
+
+        # The screenshot is stored in Crawlee's KeyValueStore; for demo purposes
+        # we just print the key. In real automated tests you could open the KV
+        # store and verify the PNG exists.
+
+# ---------------------------------------------------------------------------
+
+
 if __name__ == "__main__":
-    main()
+    import argparse
+
+    parser = argparse.ArgumentParser(description="Traider demonstration script")
+    mode_help = (
+        "Select run mode. 'trading' executes the original Alpaca/IB trading demo "
+        "workflow (default). 'crawlee-server' starts the Crawlee screenshot web "
+        "server that captures screenshots using PlaywrightCrawler."
+        " 'scrape-direct' runs an in-process scrape call via httpx."
+    )
+    parser.add_argument(
+        "--mode",
+        choices=["trading", "crawlee-server", "scrape-direct"],
+        default="trading",
+        help=mode_help,
+    )
+    parser.add_argument(
+        "--host",
+        default="127.0.0.1",
+        help="Host to bind the Crawlee web server.",
+    )
+    parser.add_argument(
+        "--port",
+        type=int,
+        default=8000,
+        help="Port to bind the Crawlee web server.",
+    )
+
+    parser.add_argument(
+        "--scrape-url",
+        default="https://www.google.com",
+        help="URL to screenshot when using scrape-direct mode.",
+    )
+
+    args = parser.parse_args()
+
+    if args.mode == "trading":
+        main()
+    elif args.mode == "crawlee-server":
+        run_crawlee_server(host=args.host, port=args.port)
+    else:  # scrape-direct
+        import asyncio
+
+        asyncio.run(_direct_scrape(args.scrape_url, host=args.host, port=args.port))
