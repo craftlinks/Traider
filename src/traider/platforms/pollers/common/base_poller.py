@@ -205,6 +205,7 @@ class BasePoller(ABC):
             new_items: List[BaseItem] = []
             try:
                 data = self.fetch_data()
+                logger.debug("Fetched data: %s", data)
                 items = self.parse_items(data)
                 new_items = filter_new_items(items, self.cache)
                 
