@@ -25,7 +25,8 @@ might change without notice. The code tries to fail loudly in case the
 structure of the HTML or JSON payload changes.
 """
 
-from datetime import timezone
+import sqlite3
+from datetime import timezone, date, timedelta
 from typing import Final, Tuple, Any
 
 import json
@@ -35,7 +36,9 @@ import pandas as pd  # type: ignore  # runtime dependency
 import requests
 from bs4 import BeautifulSoup  # type: ignore[attr-defined]
 
-__all__ = ["get_earnings_data_advanced"]
+from traider.db.database import get_db_connection, create_tables
+
+__all__ = ["get_earnings_data_advanced", "save_earnings_data"]
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -94,17 +97,84 @@ def _fetch_cookie_and_crumb(session: requests.Session, *, timeout: int = 30) -> 
     except Exception:
         return None, None
 
+
+def save_earnings_data(df: pd.DataFrame, conn: sqlite3.Connection) -> None:
+    """Save earnings data from a DataFrame into the database.
+
+    This function performs two main operations:
+    1.  Inserts new companies into the `companies` table if they don't exist.
+    2.  Inserts or updates earnings reports in the `earnings_reports` table.
+
+    An `INSERT OR IGNORE` strategy is used for new companies, while an `UPSERT`
+    (insert on conflict update) is used for earnings reports to keep them fresh.
+
+    Parameters
+    ----------
+    df:
+        DataFrame with earnings data, matching the column names from Yahoo.
+    conn:
+        Active SQLite database connection.
+    """
+    if df.empty:
+        return
+
+    # Replace pandas missing values (NaN, NaT) with None for DB compatibility
+    df = df.where(pd.notna(df), None)
+
+    cursor = conn.cursor()
+    for _, row in df.iterrows():
+        # --- 1. Ensure company exists in `companies` table ---
+        cursor.execute(
+            "INSERT OR IGNORE INTO companies (ticker, company_name) VALUES (?, ?)",
+            (row["Symbol"], row["Company"]),
+        )
+
+        # --- 2. Insert or update the earnings report ---
+        earnings_call_time = row["Earnings Call Time"]
+        market_cap = row.get("Market Cap")
+
+        sql = """
+            INSERT INTO earnings_reports (
+                company_ticker, report_datetime, event_name, time_type,
+                eps_estimate, reported_eps, surprise_percentage, market_cap
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(company_ticker, report_datetime) DO UPDATE SET
+                event_name=excluded.event_name,
+                time_type=excluded.time_type,
+                eps_estimate=excluded.eps_estimate,
+                reported_eps=excluded.reported_eps,
+                surprise_percentage=excluded.surprise_percentage,
+                market_cap=excluded.market_cap,
+                updated_at=CURRENT_TIMESTAMP;
+        """
+        params = (
+            row["Symbol"],
+            earnings_call_time.isoformat() if isinstance(earnings_call_time, pd.Timestamp) else None,
+            row.get("Event Name"),
+            row.get("Time Type"),
+            row.get("EPS Estimate"),
+            row.get("Reported EPS"),
+            row.get("Surprise (%)"),
+            int(market_cap) if pd.notna(market_cap) else None,
+        )
+        cursor.execute(sql, params)
+
+    conn.commit()
+    print(f"Successfully saved {len(df)} earnings reports to the database.")
+
+
 # ---------------------------------------------------------------------------
 # Public helpers
 # ---------------------------------------------------------------------------
 
-def get_earnings_data_advanced(date_str: str) -> pd.DataFrame:  # noqa: D401 – prefer imperative
-    """Fetch Yahoo Finance earnings calendar for *date_str*.
+def get_earnings_data_advanced(target_date: date) -> pd.DataFrame:  # noqa: D401 – prefer imperative
+    """Fetch Yahoo Finance earnings calendar for a specific date.
 
     Parameters
     ----------
-    date_str:
-        Target date in ``YYYY-MM-DD`` format.
+    target_date:
+        Target date to fetch data for.
 
     Returns
     -------
@@ -112,7 +182,7 @@ def get_earnings_data_advanced(date_str: str) -> pd.DataFrame:  # noqa: D401 –
         Parsed calendar with human-readable column names. Might be empty when
         no rows are returned or an unrecoverable error occurs.
     """
-
+    date_str = target_date.strftime("%Y-%m-%d")
     print(f"--- Starting advanced fetch for {date_str} ---")
 
     # Keep cookies between requests – they include crucial auth tokens
@@ -129,54 +199,9 @@ def get_earnings_data_advanced(date_str: str) -> pd.DataFrame:  # noqa: D401 –
 
         if cookie and crumb:
             print(f"Successfully obtained crumb: {crumb}")
+
         else:
-            print("fc.yahoo.com method failed – falling back to HTML parsing …")
-
-            # Fallback: fetch calendar page and try old extraction methods
-            calendar_url = YF_CALENDAR_URL_TEMPLATE.format(date=date_str)
-            page_response = session.get(calendar_url, timeout=30)
-            page_response.raise_for_status()
-
-            soup = BeautifulSoup(page_response.text, "html.parser")
-            import re
-
-            crumb_script: Any | None = None
-
-            match = re.search(r'"CrumbStore":\{"crumb":"(?P<crumb>[^"]+)"\}', page_response.text)
-            if match:
-                raw_crumb = match.group("crumb")
-                crumb = bytes(raw_crumb, "ascii").decode("unicode_escape")
-
-            if not crumb:
-                # Legacy <script data-url="getcrumb"> method
-                crumb_script = soup.find("script", attrs={"data-url": lambda v: v and "getcrumb" in v})  # type: ignore[arg-type]
-                if crumb_script is not None and getattr(crumb_script, "attrs", None):  # type: ignore[truthy-bool]
-                    crumb_endpoint: str = crumb_script["data-url"]  # type: ignore[index]
-                    if crumb_endpoint.startswith("/"):
-                        crumb_endpoint = f"https://query1.finance.yahoo.com{crumb_endpoint}"
-
-                    try:
-                        resp = session.get(crumb_endpoint, timeout=15)
-                        resp.raise_for_status()
-                        crumb_candidate = resp.text.strip().strip('"\'')
-                        if crumb_candidate and "{" not in crumb_candidate:
-                            crumb = crumb_candidate
-                    except Exception:
-                        pass
-
-            if not crumb and crumb_script is not None:
-                try:
-                    crumb_json = json.loads(crumb_script.string or "{}")  # type: ignore[arg-type]
-                    crumb_body = crumb_json.get("body")
-                    if isinstance(crumb_body, str) and "{" not in crumb_body:
-                        crumb = crumb_body
-                except json.JSONDecodeError:
-                    pass
-
-        if not crumb:
             raise RuntimeError("Unable to obtain Yahoo crumb token via any method.")
-
-        print(f"Successfully extracted crumb: {crumb}")
 
         # ------------------------------------------------------------------
         # STEP 2: Query internal visualization API
@@ -187,10 +212,7 @@ def get_earnings_data_advanced(date_str: str) -> pd.DataFrame:  # noqa: D401 –
         # ------------------------------------------------------------------
         # Build new payload (as captured from browser dev tools)
         # ------------------------------------------------------------------
-        from datetime import datetime, timedelta
-
-        date_dt = datetime.strptime(date_str, "%Y-%m-%d")
-        next_day = (date_dt + timedelta(days=1)).strftime("%Y-%m-%d")
+        next_day = (target_date + timedelta(days=1)).strftime("%Y-%m-%d")
 
         payload = {
             "offset": 0,
@@ -308,27 +330,25 @@ def get_earnings_data_advanced(date_str: str) -> pd.DataFrame:  # noqa: D401 –
 # ---------------------------------------------------------------------------
 
 if __name__ == "__main__":  # pragma: no cover – manual usage
-    import argparse
-    from pathlib import Path
+    # Ensure the database and its tables are created before proceeding
+    print("Initializing database…")
+    create_tables()
 
-    parser = argparse.ArgumentParser(description="Download Yahoo Finance earnings calendar for a given date!")
-    parser.add_argument("date", help="Target date in YYYY-MM-DD format, e.g. 2025-08-14")
-    parser.add_argument(
-        "--output",
-        "-o",
-        type=Path,
-        help="Optional CSV output path. When omitted the file is saved as 'yahoo_earnings_<date>.csv' in CWD.",
-    )
-    args = parser.parse_args()
+    # Define the date range: yesterday, today, and tomorrow
+    today = date.today()
+    date_range = [today - timedelta(days=1), today, today + timedelta(days=1)]
 
-    df_result = get_earnings_data_advanced(args.date)
-    if df_result.empty:
-        print("No data to write – exiting.")
-        raise SystemExit(0)
+    all_earnings_df = pd.DataFrame()
 
-    # Display first rows for quick inspection
-    print(df_result.head(15))
+    for day in date_range:
+        df_day = get_earnings_data_advanced(day)
+        if not df_day.empty:
+            all_earnings_df = pd.concat([all_earnings_df, df_day], ignore_index=True)
 
-    csv_path = args.output or Path.cwd() / f"yahoo_earnings_{args.date}.csv"
-    df_result.to_csv(csv_path, index=False)
-    print(f"Saved full data to {csv_path.absolute()}")
+    if all_earnings_df.empty:
+        print("No earnings data fetched for the last three days. Exiting.")
+    else:
+        print("\n--- Combined Data ---")
+        print(all_earnings_df.head())
+        with get_db_connection() as db_conn:
+            save_earnings_data(all_earnings_df, db_conn)

@@ -21,6 +21,7 @@ __all__ = [
     "NewsroomPoller",
     "PRNewswirePoller", 
     "SECPoller",
+    "YahooEarningsCalendarPoller",
     # Base classes
     "BasePoller",
     "BaseItem", 

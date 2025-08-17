@@ -39,7 +39,7 @@ def create_tables() -> None:  # noqa: D401
             """
             CREATE TABLE IF NOT EXISTS companies (
                 ticker TEXT PRIMARY KEY,
-                cik TEXT NOT NULL,
+                cik TEXT,
                 company_name TEXT NOT NULL,
                 sector TEXT,
                 industry TEXT
@@ -90,18 +90,18 @@ def create_tables() -> None:  # noqa: D401
             CREATE TABLE IF NOT EXISTS earnings_reports (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 company_ticker TEXT NOT NULL,
-                report_date TEXT NOT NULL,
+                report_datetime TEXT NOT NULL,
                 fiscal_quarter INTEGER,
                 fiscal_year INTEGER,
                 event_name TEXT,
-                call_time TEXT CHECK(call_time IN ('BMO', 'TAS', 'AMC', 'Unknown')),
+                time_type TEXT,
                 eps_estimate REAL,
                 reported_eps REAL,
                 surprise_percentage REAL,
-                market_cap_on_report_date INTEGER,
+                market_cap INTEGER,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                UNIQUE(company_ticker, report_date),
+                UNIQUE(company_ticker, report_datetime),
                 FOREIGN KEY (company_ticker) REFERENCES companies (ticker) ON DELETE CASCADE
             );
             """
@@ -122,8 +122,9 @@ def create_tables() -> None:  # noqa: D401
         )
 
         # Index for quicker look-ups of a company's earnings history
+        cursor.execute("DROP INDEX IF EXISTS idx_earnings_ticker_date;")
         cursor.execute(
-            "CREATE INDEX IF NOT EXISTS idx_earnings_ticker_date ON earnings_reports (company_ticker, report_date DESC);"
+            "CREATE INDEX IF NOT EXISTS idx_earnings_ticker_datetime ON earnings_reports (company_ticker, report_datetime DESC);"
         )
 
         conn.commit()
