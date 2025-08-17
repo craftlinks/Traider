@@ -156,7 +156,7 @@ def save_earnings_data(df: pd.DataFrame, conn: sqlite3.Connection) -> None:
             row.get("EPS Estimate"),
             row.get("Reported EPS"),
             row.get("Surprise (%)"),
-            int(market_cap) if pd.notna(market_cap) else None,
+            int(market_cap) if pd.notna(market_cap) else None, # type: ignore
         )
         cursor.execute(sql, params)
 
@@ -300,14 +300,10 @@ def get_earnings_data_advanced(target_date: date) -> pd.DataFrame:  # noqa: D401
             col = df["Earnings Call Time"]
             if pd.api.types.is_numeric_dtype(col):
                 # milliseconds since epoch UTC
-                df["Earnings Call Time"] = pd.to_datetime(col, unit="ms", utc=True).dt.tz_convert(
-                    "America/New_York"
-                )
+                df["Earnings Call Time"] = pd.to_datetime(col, unit="ms", utc=True)
             else:
                 # ISO‐8601 strings like 2025-08-14T04:00:00.000Z
-                df["Earnings Call Time"] = pd.to_datetime(col, utc=True, errors="coerce").dt.tz_convert(
-                    "America/New_York"
-                )
+                df["Earnings Call Time"] = pd.to_datetime(col, utc=True, errors="coerce")
 
         # Ensure numeric columns are typed correctly
         for col in ["EPS Estimate", "Reported EPS", "Surprise (%)", "Market Cap"]:
