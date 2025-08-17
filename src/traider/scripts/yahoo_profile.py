@@ -203,7 +203,11 @@ def update_company_profile(ticker: str) -> bool:  # noqa: D401 – imperative mo
     return wrote_anything
 
 
-def update_all_company_profiles(*, delay_between: float | None = None) -> None:  # noqa: D401
+def update_all_company_profiles(
+    *,
+    delay_between: float | None = None,
+    start_from: str | None = None,
+) -> None:  # noqa: D401
     """Iterate over all tickers in the DB and refresh their Yahoo profile data.
 
     Parameters
@@ -211,6 +215,10 @@ def update_all_company_profiles(*, delay_between: float | None = None) -> None: 
     delay_between:
         Seconds to wait between successive requests.  When *None*, the module‐
         level constant ``_REQUEST_DELAY_S`` is used.
+    start_from:
+        Resume the import starting *with* this ticker symbol (inclusive).
+        Comparison is case-insensitive.  When *None*, start from the very first
+        company in alphabetical order.
     """
 
     delay_s = _REQUEST_DELAY_S if delay_between is None else max(0.0, delay_between)
@@ -220,6 +228,23 @@ def update_all_company_profiles(*, delay_between: float | None = None) -> None: 
     if not companies:
         logger.info("No companies found in DB – nothing to update.")
         return
+
+    # If resume ticker provided, skip until we reach it
+    if start_from is not None:
+        start_from_upper = start_from.upper()
+        try:
+            start_index = next(
+                i
+                for i, c in enumerate(companies)
+                if str(c["ticker"]).upper() >= start_from_upper
+            )
+        except StopIteration:
+            logger.error("Start ticker %s not found in DB. Aborting.", start_from_upper)
+            return
+        companies = companies[start_index:]
+        logger.info(
+            "Resuming import at ticker %s (index %d).", start_from_upper, start_index + 1
+        )
 
     total = len(companies)
     logger.info("Updating Yahoo profiles for %d tickers…", total)
@@ -282,6 +307,11 @@ if __name__ == "__main__":  # pragma: no cover – manual usage
         default=_REQUEST_DELAY_S,
         help=f"Seconds to wait between requests (default: {_REQUEST_DELAY_S}).",
     )
+    parser.add_argument(
+        "--resume-from",
+        metavar="TICKER",
+        help="Resume import starting from this ticker (inclusive). Ignored when explicit tickers are supplied.",
+    )
 
     args = parser.parse_args()
 
@@ -294,5 +324,5 @@ if __name__ == "__main__":  # pragma: no cover – manual usage
             if idx < len(args.tickers):
                 time.sleep(delay_between)
     else:
-        update_all_company_profiles(delay_between=delay_between)
+        update_all_company_profiles(delay_between=delay_between, start_from=args.resume_from)
 
