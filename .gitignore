@@ -270,3 +270,4 @@ documentation/
 
 # Crawlee 
 storage/
+*.csv
