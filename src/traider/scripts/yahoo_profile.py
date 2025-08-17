@@ -114,14 +114,20 @@ def _extract_profile_data(html: str) -> Tuple[Optional[str], Optional[str], Opti
 def _prepare_session() -> requests.Session:
     """Return a *requests* Session pre-populated with Yahoo cookie and headers."""
 
-    sess = requests.Session()
-    sess.headers.update({"User-Agent": _USER_AGENT, "Accept-Language": "en-US,en;q=0.9"})
+    session = requests.Session()
+    session.headers.update({"User-Agent": _USER_AGENT, "Accept-Language": "en-US,en;q=0.9"})
 
-    cookie, _crumb = _fetch_cookie_and_crumb(sess)
+    cookie, _crumb = _fetch_cookie_and_crumb(session)
     if cookie is not None:
-        # Attach cookie to *all* subsequent requests via the session cookie jar
-        sess.cookies.set(cookie.name, str(cookie.value))  # type: ignore[arg-type]
-    return sess
+        # Persist the cookie for all subsequent requests on this session
+        session.cookies.set(cookie.name, str(cookie.value))  # type: ignore[arg-type]
+
+    # We currently don’t need the crumb for the profile endpoints, but keep it
+    # attached in case we add calls that require it in the future.
+    if _crumb:
+        session.headers["x-crumb"] = _crumb  # harmless for endpoints that ignore it
+
+    return session
 
 
 # ---------------------------------------------------------------------------
@@ -129,20 +135,26 @@ def _prepare_session() -> requests.Session:
 # ---------------------------------------------------------------------------
 
 
-def update_company_profile(ticker: str) -> bool:  # noqa: D401 – imperative mood preferred
+def update_company_profile(
+    ticker: str,
+    *,
+    session: requests.Session | None = None,
+    retries_left: int = 1,
+) -> bool:  # noqa: D401 – imperative mood preferred
     """Fetch & persist profile information for *ticker*.
 
     Returns *True* if any data was successfully written to the DB, *False*
     otherwise.
     """
 
-    session = _prepare_session()
+    # Use shared session if supplied, otherwise create a throw-away one.
+    sess = session or _prepare_session()
 
     url = _YF_PROFILE_TEMPLATE.format(ticker=ticker)
 
     # First attempt: simple HTML scrape -------------------------------------------------
     try:
-        response = session.get(url, timeout=20)
+        response = sess.get(url, timeout=20)
         response.raise_for_status()
         website, sector, industry = _extract_profile_data(response.text)
     except requests.RequestException as exc:
@@ -153,7 +165,7 @@ def update_company_profile(ticker: str) -> bool:  # noqa: D401 – imperative mo
     if not any([website, sector, industry]):
         json_url = _YF_PROFILE_JSON_TEMPLATE.format(ticker=ticker)
         try:
-            json_resp = session.get(json_url, timeout=20)
+            json_resp = sess.get(json_url, timeout=20)
             json_resp.raise_for_status()
             data = json_resp.json()
 
@@ -167,6 +179,22 @@ def update_company_profile(ticker: str) -> bool:  # noqa: D401 – imperative mo
             industry = profile.get("industry") or industry
         except Exception as exc:  # noqa: BLE001 – broad OK here, will log below
             logger.warning("JSON endpoint failed for %s: %s", ticker, exc)
+
+    # One refresh attempt with a brand-new cookie/crumb ----------------------
+    if (
+        not any([website, sector, industry])
+        and session is not None
+        and retries_left > 0
+    ):
+        logger.info(
+            "Refreshing Yahoo session & retrying %s (remaining retries: %d)…",
+            ticker,
+            retries_left,
+        )
+        new_sess = _prepare_session()
+        return update_company_profile(
+            ticker, session=new_sess, retries_left=retries_left - 1
+        )
 
     if not any([website, sector, industry]):
         logger.info("No profile data found for %s", ticker)
@@ -255,7 +283,7 @@ def update_all_company_profiles(
         if not isinstance(ticker, str):
             continue
 
-        success = update_company_profile(ticker)
+        success = update_company_profile(ticker, session=_prepare_session())
         if success:
             updated += 1
 
