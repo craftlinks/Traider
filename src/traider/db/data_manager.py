@@ -133,6 +133,89 @@ def add_url(*, company_ticker: str, url_type: str, url: str) -> None:
 
 
 # ---------------------------------------------------------------------------
+# Earnings-specific helpers
+# ---------------------------------------------------------------------------
+
+def add_earnings_report(report: Dict[str, object]) -> None:
+    """Insert or update an earnings report.
+
+    The *earnings_reports* table uses a UNIQUE(company_ticker, report_date) constraint,
+    which allows us to rely on SQLite's *ON CONFLICT* clause to perform an UPSERT.
+
+    Parameters
+    ----------
+    report : Dict[str, object]
+        Expect keys:
+        - company_ticker (str)
+        - report_date (str, ISO-8601 e.g. ``YYYY-MM-DD``)
+        - fiscal_quarter (int | None)
+        - fiscal_year (int | None)
+        - event_name (str | None)
+        - call_time (str)
+        - eps_estimate (float | None)
+        - reported_eps (float | None)
+        - surprise_percentage (float | None)
+        - market_cap (int | None) – *parsed to raw integer dollars*.
+    """
+    sql = (
+        """
+        INSERT INTO earnings_reports (
+            company_ticker,
+            report_date,
+            fiscal_quarter,
+            fiscal_year,
+            event_name,
+            call_time,
+            eps_estimate,
+            reported_eps,
+            surprise_percentage,
+            market_cap_on_report_date
+        ) VALUES (
+            :company_ticker,
+            :report_date,
+            :fiscal_quarter,
+            :fiscal_year,
+            :event_name,
+            :call_time,
+            :eps_estimate,
+            :reported_eps,
+            :surprise_percentage,
+            :market_cap
+        )
+        ON CONFLICT(company_ticker, report_date) DO UPDATE SET
+            fiscal_quarter          = excluded.fiscal_quarter,
+            fiscal_year             = excluded.fiscal_year,
+            event_name              = excluded.event_name,
+            call_time               = excluded.call_time,
+            eps_estimate            = excluded.eps_estimate,
+            reported_eps            = excluded.reported_eps,
+            surprise_percentage     = excluded.surprise_percentage,
+            market_cap_on_report_date = excluded.market_cap_on_report_date,
+            updated_at              = CURRENT_TIMESTAMP;
+        """
+    )
+
+    with get_db_connection() as conn:
+        try:
+            conn.execute(sql, report)
+            conn.commit()
+            logger.debug(
+                "Saved earnings report for %s on %s",
+                report.get("company_ticker"),
+                report.get("report_date"),
+            )
+        except sqlite3.IntegrityError as exc:
+            # Likely company_ticker does not exist yet – caller should ensure FK integrity
+            conn.rollback()
+            logger.exception("Integrity error while inserting earnings report: %s", exc)
+            raise
+        except sqlite3.Error as exc:
+            conn.rollback()
+            logger.exception("SQLite error while inserting earnings report: %s", exc)
+            raise
+
+
+# ---------------------------------------------------------------------------
 # Query helpers
 # ---------------------------------------------------------------------------
 
@@ -164,6 +247,31 @@ def list_companies(limit: int | None = None) -> List[Dict[str, str | None]]:
     with get_db_connection() as conn:
         conn.row_factory = sqlite3.Row
         cursor = conn.execute(sql)
+        return [dict(r) for r in cursor.fetchall()]
+
+
+def get_earnings_by_date(date_str: str) -> List[Dict[str, object]]:
+    """Return all earnings reports for a given *report_date* (ISO-8601 string)."""
+    with get_db_connection() as conn:
+        conn.row_factory = sqlite3.Row
+        cursor = conn.execute(
+            "SELECT * FROM earnings_reports WHERE report_date = ? ORDER BY company_ticker",
+            (date_str,),
+        )
+        return [dict(r) for r in cursor.fetchall()]
+
+
+def get_earnings_for_ticker(ticker: str) -> List[Dict[str, object]]:
+    """Return all earnings reports for *ticker*, most-recent first."""
+    with get_db_connection() as conn:
+        conn.row_factory = sqlite3.Row
+        cursor = conn.execute(
+            """SELECT *
+               FROM earnings_reports
+               WHERE company_ticker = ?
+               ORDER BY report_date DESC""",
+            (ticker.upper(),),
+        )
         return [dict(r) for r in cursor.fetchall()]
 
 

@@ -34,17 +34,10 @@ def create_tables() -> None:  # noqa: D401
         cursor = conn.cursor()
 
         # --- Companies Table ---
-        # For development simplicity: if the companies table exists with an old
-        # schema (e.g. UNIQUE constraint on cik) drop and recreate. This avoids
-        # migration complexity at this stage.
+
         cursor.execute(
             """
-            DROP TABLE IF EXISTS companies;
-            """
-        )
-        cursor.execute(
-            """
-            CREATE TABLE companies (
+            CREATE TABLE IF NOT EXISTS companies (
                 ticker TEXT PRIMARY KEY,
                 cik TEXT NOT NULL,
                 company_name TEXT NOT NULL,
@@ -89,6 +82,48 @@ def create_tables() -> None:  # noqa: D401
                 UNIQUE (company_ticker, url_type)
             );
             """
+        )
+
+        # --- Earnings Reports Table ---
+        cursor.execute(
+            """
+            CREATE TABLE IF NOT EXISTS earnings_reports (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                company_ticker TEXT NOT NULL,
+                report_date TEXT NOT NULL,
+                fiscal_quarter INTEGER,
+                fiscal_year INTEGER,
+                event_name TEXT,
+                call_time TEXT CHECK(call_time IN ('BMO', 'TAS', 'AMC', 'Unknown')),
+                eps_estimate REAL,
+                reported_eps REAL,
+                surprise_percentage REAL,
+                market_cap_on_report_date INTEGER,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(company_ticker, report_date),
+                FOREIGN KEY (company_ticker) REFERENCES companies (ticker) ON DELETE CASCADE
+            );
+            """
+        )
+
+        # Trigger to auto-update the 'updated_at' timestamp whenever a row changes
+        cursor.execute(
+            """
+            CREATE TRIGGER IF NOT EXISTS update_earnings_reports_updated_at
+            AFTER UPDATE ON earnings_reports
+            FOR EACH ROW
+            BEGIN
+                UPDATE earnings_reports
+                SET updated_at = CURRENT_TIMESTAMP
+                WHERE id = OLD.id;
+            END;
+            """
+        )
+
+        # Index for quicker look-ups of a company's earnings history
+        cursor.execute(
+            "CREATE INDEX IF NOT EXISTS idx_earnings_ticker_date ON earnings_reports (company_ticker, report_date DESC);"
         )
 
         conn.commit()
