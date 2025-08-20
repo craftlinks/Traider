@@ -28,6 +28,7 @@ dependencies = [
     "asgi-lifespan>=1.0.1",
     "pandas>=2.2.2",
     "tldextract>=5.3.0",
+    "camoufox>=0.4.11",
 ]
 
 [tool.setuptools.packages.find]

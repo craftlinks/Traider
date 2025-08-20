@@ -24,6 +24,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 TICKERS = ['LWLG']
+DEFAULT_KEYWORDS = ['invest', 'event', 'news', 'filing', 'press-release', 'press release']
 
 # Database path
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
@@ -114,8 +115,6 @@ def _check_enqueue_strategy(
         )
 
     return False
-
-DEFAULT_KEYWORDS = ['invest', 'event', 'news', 'filing', 'press-release', 'press release']
 
 def _filter_links_iterator(
         request_iterator: Iterator[str], origin_url: str, enqueue_strategy: str, limit: int | None = None,
@@ -238,4 +237,4 @@ if __name__ == "__main__":
         if website_url:
             websites.append(website_url)
 
-    asyncio.run(run_crawler(websites, keywords=None))
+    asyncio.run(run_crawler(websites, keywords=DEFAULT_KEYWORDS))
