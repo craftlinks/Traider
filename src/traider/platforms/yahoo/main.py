@@ -1,9 +1,12 @@
-from datetime import date
+from datetime import date, timedelta
 import logging
+import time
 from typing import Any, Final, Optional
+from urllib.parse import quote_plus
 
+import pandas as pd
 import requests
-from traider.platforms.yahoo.helpers import extract_profile_data_html, extract_profile_data_json
+from traider.platforms.yahoo.helpers import extract_earnings_data_json, extract_profile_data_html, extract_profile_data_json
 
 # ---------------------------------------------------------------------------
 # Configuration & constants
@@ -42,12 +45,16 @@ _REQUEST_DELAY_S: Final[float] = 1.0
 # ---------------------------------------------------------------------------
 
 class YahooFinance:
+    crumb: str
+    
     def __init__(self) -> None:
         self.session = requests.Session()
         self.session.headers.update({"User-Agent": _USER_AGENT})
-        self.cookie, self.crumb = self._fetch_cookie_and_crumb()
-        if self.cookie and self.crumb:
-            logger.info(f"Successfully obtained crumb: {self.crumb}")
+        cookie, crumb = self._fetch_cookie_and_crumb()
+        if cookie and crumb:
+            logger.info(f"Successfully obtained crumb: {crumb}")
+            self.crumb = crumb
+            self.cookie = cookie
         else:
             raise RuntimeError("Unable to obtain Yahoo crumb token via any method.")
 
@@ -89,9 +96,11 @@ class YahooFinance:
             return None, None
 
     def _refresh_cookie_and_crumb(self) -> None:
-        self.cookie, self.crumb = self._fetch_cookie_and_crumb()
-        if self.cookie and self.crumb:
-            logger.info(f"Successfully refreshed crumb: {self.crumb}")
+        cookie, crumb = self._fetch_cookie_and_crumb()
+        if cookie and crumb:
+            logger.info(f"Successfully refreshed crumb: {crumb}")
+            self.crumb = crumb
+            self.cookie = cookie
         else:
             raise RuntimeError("Unable to obtain Yahoo crumb token via any method.")
 
@@ -133,8 +142,71 @@ class YahooFinance:
 
         return {}
 
-    def get_earnings(self, start_date: date, end_date: Optional[date] = None) -> dict[str, Any]:
-        url = YF_CALENDAR_URL_TEMPLATE.format(date=start_date)
-        response = self.session.get(url)
-        response.raise_for_status()
-        return response.json()
+    def get_earnings(self, start_date: date, end_date: Optional[date] = None, max_retries: int = 3) -> pd.DataFrame:
+        date_str = start_date.strftime("%Y-%m-%d")
+        logger.info(f"--- Starting earnings fetch for {date_str} ---")
+        
+        for attempt in range(max_retries + 1):
+            try:
+                if attempt > 0:
+                    logger.info(f"Retry attempt {attempt}/{max_retries} for {date_str}")
+                    time.sleep(2 ** attempt)  # Exponential backoff
+                api_url = YF_VISUALIZATION_API.format(crumb=quote_plus(self.crumb))
+                next_day = (start_date + timedelta(days=1)).strftime("%Y-%m-%d")
+                payload = {
+                    "offset": 0,
+                    "size": 250,  # API rejects >250
+                    "sortField": "intradaymarketcap",
+                    "sortType": "DESC",
+                    "entityIdType": "sp_earnings",
+                    "includeFields": [
+                        "ticker",
+                        "companyshortname",
+                        "eventname",
+                        "startdatetime",
+                        "startdatetimetype",
+                        "epsestimate",
+                        "epsactual",
+                        "epssurprisepct",
+                        "intradaymarketcap",
+                    ],
+                    "query": {
+                        "operator": "and",
+                        "operands": [
+                            {"operator": "gte", "operands": ["startdatetime", date_str]},
+                            {"operator": "lt", "operands": ["startdatetime", next_day]},
+                            {"operator": "eq", "operands": ["region", "us"]},
+                            {
+                                "operator": "or",
+                                "operands": [
+                                    {"operator": "eq", "operands": ["eventtype", "EAD"]},
+                                    {"operator": "eq", "operands": ["eventtype", "ERA"]},
+                                ],
+                            },
+                        ],
+                    },
+                }
+                data_resp = self.session.post(
+                    api_url,
+                    json=payload,
+                    timeout=30,
+                    headers={"x-crumb": self.crumb, "User-Agent": _USER_AGENT},
+                    cookies={self.cookie.name: str(self.cookie.value)} if self.cookie else None,  # type: ignore[arg-type]
+                )
+                data_resp.raise_for_status()
+                api_payload = data_resp.json()
+                df = extract_earnings_data_json(api_payload)
+                return df
+            except requests.RequestException as exc:
+                logger.error(f"Network-level error while contacting Yahoo Finance (attempt {attempt + 1}): {exc}")
+                if attempt < max_retries:
+                    continue
+                else:
+                    print(f"Network-level error while contacting Yahoo Finance: {exc}")
+            except Exception as exc:  # noqa: BLE001 – broad but prints error to user
+                logger.error(f"Unhandled error parsing Yahoo response (attempt {attempt + 1}): {exc}")
+                if attempt < max_retries:
+                    continue
+                else:
+                    print(f"Unhandled error parsing Yahoo response: {exc}")
+        return pd.DataFrame()

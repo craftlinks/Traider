@@ -1,6 +1,7 @@
 from typing import Any, Optional, Tuple
 
 from bs4 import BeautifulSoup
+import pandas as pd 
 
 def extract_profile_data_html(html: str) -> Tuple[Optional[str], Optional[str], Optional[str]]:
     """Parse the Yahoo profile HTML and return (website_url, sector, industry).
@@ -58,3 +59,57 @@ def extract_profile_data_json(json: dict[str, Any]) -> Tuple[Optional[str], Opti
     industry = profile.get("industry")
 
     return website, sector, industry
+
+
+def extract_earnings_data_json(json: dict[str, Any]) -> pd.DataFrame:
+    """Parse the Yahoo earnings JSON and return a DataFrame."""
+    documents: list[dict] = (
+                api_payload.get("finance", {}).get("result", [{}])[0].get("documents", [])  # type: ignore[index]
+            )
+    if not documents:
+        print("No earnings rows returned by Yahoo.")
+        return pd.DataFrame()
+
+    doc = documents[0]
+    rows = doc.get("rows", [])
+    columns_meta = doc.get("columns", [])
+    if not rows or not columns_meta:
+        print("Unexpected response structure – rows or columns missing.")
+        return pd.DataFrame()
+
+    columns = [col["id"] for col in columns_meta]
+    df = pd.DataFrame(rows, columns=columns)  # type: ignore[arg-type]
+
+    # Friendly column names
+    df.rename(
+        columns={
+            "ticker": "Symbol",
+            "companyshortname": "Company",
+            "eventname": "Event Name",
+            "startdatetime": "Earnings Call Time",
+            "startdatetimetype": "Time Type",
+            "epsestimate": "EPS Estimate",
+            "epsactual": "Reported EPS",
+            "epssurprisepct": "Surprise (%)",
+            "intradaymarketcap": "Market Cap",
+        },
+        inplace=True,
+    )
+
+    # Timestamp → timezone-aware datetime
+    if "Earnings Call Time" in df.columns and not df["Earnings Call Time"].empty:
+        col = df["Earnings Call Time"]
+        if pd.api.types.is_numeric_dtype(col):
+            # milliseconds since epoch UTC
+            df["Earnings Call Time"] = pd.to_datetime(col, unit="ms", utc=True)
+        else:
+            # ISO‐8601 strings like 2025-08-14T04:00:00.000Z
+            df["Earnings Call Time"] = pd.to_datetime(col, utc=True, errors="coerce")
+
+    # Ensure numeric columns are typed correctly
+    for col in ["EPS Estimate", "Reported EPS", "Surprise (%)", "Market Cap"]:
+        if col in df.columns:
+            df[col] = pd.to_numeric(df[col], errors="coerce")
+
+    print(f"Successfully fetched {len(df)} earnings rows.")
+    return df
