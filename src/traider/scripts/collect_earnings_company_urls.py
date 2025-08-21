@@ -11,22 +11,20 @@ This script combines functionality from:
 import argparse
 import asyncio
 import logging
-import sqlite3
-from datetime import date, timedelta
+from datetime import date
 from pathlib import Path
-from typing import Iterator, Optional, List, Tuple, override
+from typing import Iterator, Optional, List, override
 from collections import defaultdict
 from urllib.parse import urlparse, ParseResult
 
 from crawlee.browsers import BrowserPool, PlaywrightBrowserController, PlaywrightBrowserPlugin
 from crawlee import ConcurrencySettings, Request
-import pandas as pd
 import tldextract
 from crawlee.crawlers import PlaywrightCrawler, PlaywrightCrawlingContext
 from yarl import URL
 
 # Import existing modules
-from traider.platforms.pollers.yahoo_earnings_calendar import get_earnings_date_range
+from traider.platforms.yahoo.main import YahooFinance
 from traider.db.database import get_db_connection, create_tables
 
 from camoufox import AsyncNewBrowser
@@ -84,7 +82,8 @@ def get_todays_earnings_tickers() -> List[str]:
     logger.info("Fetching today's earnings data...")
 
     today = date.today()
-    earnings_df = get_earnings_date_range(today)
+    yf = YahooFinance()
+    earnings_df = yf.get_earnings(today)
 
     if earnings_df.empty:
         logger.warning("No earnings data found for today")
