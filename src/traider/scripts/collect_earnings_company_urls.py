@@ -26,7 +26,7 @@ from crawlee.crawlers import PlaywrightCrawler, PlaywrightCrawlingContext
 from yarl import URL
 
 # Import existing modules
-from traider.platforms.pollers.yahoo_earnings_calendar import get_earnings_data_advanced
+from traider.platforms.pollers.yahoo_earnings_calendar import get_earnings_date_range
 from traider.db.database import get_db_connection, create_tables
 
 from camoufox import AsyncNewBrowser
@@ -84,7 +84,7 @@ def get_todays_earnings_tickers() -> List[str]:
     logger.info("Fetching today's earnings data...")
 
     today = date.today()
-    earnings_df = get_earnings_data_advanced(today)
+    earnings_df = get_earnings_date_range(today)
 
     if earnings_df.empty:
         logger.warning("No earnings data found for today")

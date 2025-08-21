@@ -43,7 +43,7 @@ from traider.db.database import get_db_connection, create_tables
 # Set up logging
 logger = logging.getLogger(__name__)
 
-__all__ = ["get_earnings_data_advanced", "save_earnings_data"]
+__all__ = ["get_earnings_date_range", "save_earnings_data"]
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -317,7 +317,7 @@ def save_earnings_data(df: pd.DataFrame, conn: sqlite3.Connection, max_retries: 
 # Public helpers
 # ---------------------------------------------------------------------------
 
-def get_earnings_data_advanced(target_date: date, max_retries: int = 3) -> pd.DataFrame:  # noqa: D401 – prefer imperative
+def get_earnings_date_range(target_date: date, max_retries: int = 3) -> pd.DataFrame:  # noqa: D401 – prefer imperative
     """Fetch Yahoo Finance earnings calendar for a specific date with robust error handling.
 
     Parameters
@@ -511,7 +511,7 @@ if __name__ == "__main__":  # pragma: no cover – manual usage
         for day in date_range:
             try:
                 logger.info(f"Fetching earnings data for {day}")
-                df_day = get_earnings_data_advanced(day)
+                df_day = get_earnings_date_range(day)
                 if not df_day.empty:
                     all_earnings_df = pd.concat([all_earnings_df, df_day], ignore_index=True)
                     successful_fetches += 1

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from traider.platforms.yahoo.main import YahooFinance
+
 """Fetch Yahoo Finance *profile* data (website URL, sector, industry) for
 all tickers currently stored in the local database.
 
@@ -26,108 +28,16 @@ CSS selectors / parsing logic accordingly.
 
 import logging
 import time
-from pathlib import Path
-from typing import Final, Tuple, Optional
-
-import requests
-from bs4 import BeautifulSoup  # type: ignore[attr-defined]
+from typing import Final, Optional
 
 from traider.db.database import get_db_connection, create_tables
 from traider.db.data_manager import list_companies, add_url
-# Reuse Yahoo cookie / crumb retrieval from earnings calendar module
-from traider.platforms.pollers.yahoo_earnings_calendar import _fetch_cookie_and_crumb  # type: ignore
-
-# ---------------------------------------------------------------------------
-# Configuration & constants
-# ---------------------------------------------------------------------------
-
-_USER_AGENT: Final[str] = (
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-    "AppleWebKit/537.36 (KHTML, like Gecko) "
-    "Chrome/121.0.0.0 Safari/537.36"
-)
-
-# Include ?p=<ticker> query param – Yahoo sometimes returns 404 without it
-_YF_PROFILE_TEMPLATE: Final[str] = "https://finance.yahoo.com/quote/{ticker}/profile?p={ticker}"
-# Public JSON endpoint that usually contains the exact same information we need
-# and is less likely to change than the HTML.  No crumb token required.
-_YF_PROFILE_JSON_TEMPLATE: Final[str] = (
-    "https://query2.finance.yahoo.com/v10/finance/quoteSummary/{ticker}?modules=assetProfile&lang=en-US&region=US"
-)
-
 #    Courtesy delay between requests (seconds).  Be nice to Yahoo.
 _REQUEST_DELAY_S: Final[float] = 1.0
 
 # Set up module-level logger
 logger = logging.getLogger(__name__)
 
-# ---------------------------------------------------------------------------
-# HTML parsing helpers
-# ---------------------------------------------------------------------------
-
-
-def _extract_profile_data(html: str) -> Tuple[Optional[str], Optional[str], Optional[str]]:
-    """Parse the Yahoo profile HTML and return (website_url, sector, industry).
-
-    All values may be *None* if the corresponding element could not be
-    located.
-    """
-
-    soup = BeautifulSoup(html, "html.parser")
-
-    # --- Website URL --------------------------------------------------------
-    website_url: Optional[str] = None
-    website_tag = soup.select_one("a[data-ylk*='business-url']")
-    if website_tag is not None:
-        # The visible text already contains the fully-qualified URL
-        website_url = website_tag.get_text(strip=True)
-        # Occasionally the anchor text contains an ellipsis while the full URL
-        # is stored inside the *href*.  Prefer *href* in that case.
-        href_val = website_tag.get("href")
-        if isinstance(href_val, str) and href_val.startswith("http"):
-            website_url = href_val.strip()
-
-    # --- Sector -------------------------------------------------------------
-    sector: Optional[str] = None
-    dt_sector = soup.find("dt", string=lambda s: isinstance(s, str) and "Sector" in s)
-    if dt_sector is not None:
-        sector_anchor = dt_sector.find_next("a")
-        if sector_anchor is not None:
-            sector = sector_anchor.get_text(strip=True)
-
-    # --- Industry -----------------------------------------------------------
-    industry: Optional[str] = None
-    dt_industry = soup.find("dt", string=lambda s: isinstance(s, str) and "Industry" in s)
-    if dt_industry is not None:
-        industry_anchor = dt_industry.find_next("a")
-        if industry_anchor is not None:
-            industry = industry_anchor.get_text(strip=True)
-
-    return website_url, sector, industry
-
-
-# ---------------------------------------------------------------------------
-# Networking helpers
-# ---------------------------------------------------------------------------
-
-
-def _prepare_session() -> requests.Session:
-    """Return a *requests* Session pre-populated with Yahoo cookie and headers."""
-
-    session = requests.Session()
-    session.headers.update({"User-Agent": _USER_AGENT, "Accept-Language": "en-US,en;q=0.9"})
-
-    cookie, _crumb = _fetch_cookie_and_crumb(session)
-    if cookie is not None:
-        # Persist the cookie for all subsequent requests on this session
-        session.cookies.set(cookie.name, str(cookie.value))  # type: ignore[arg-type]
-
-    # We currently don’t need the crumb for the profile endpoints, but keep it
-    # attached in case we add calls that require it in the future.
-    if _crumb:
-        session.headers["x-crumb"] = _crumb  # harmless for endpoints that ignore it
-
-    return session
 
 
 # ---------------------------------------------------------------------------
@@ -137,80 +47,23 @@ def _prepare_session() -> requests.Session:
 
 def update_company_profile(
     ticker: str,
-    *,
-    session: requests.Session | None = None,
-    retries_left: int = 1,
+    yf: Optional[YahooFinance] = None,
 ) -> bool:  # noqa: D401 – imperative mood preferred
-    """Fetch & persist profile information for *ticker*.
 
-    Returns *True* if any data was successfully written to the DB, *False*
-    otherwise.
-    """
-
-    # Use shared session if supplied, otherwise create a throw-away one.
-    sess = session or _prepare_session()
-
-    url = _YF_PROFILE_TEMPLATE.format(ticker=ticker)
-
-    # First attempt: simple HTML scrape -------------------------------------------------
-    try:
-        response = sess.get(url, timeout=20)
-        response.raise_for_status()
-        website, sector, industry = _extract_profile_data(response.text)
-    except requests.RequestException as exc:
-        logger.info("HTML fetch failed for %s (%s). Trying JSON endpoint…", ticker, exc)
-        website = sector = industry = None
-
-    # Fallback: public quoteSummary assetProfile JSON -----------------------
-    if not any([website, sector, industry]):
-        json_url = _YF_PROFILE_JSON_TEMPLATE.format(ticker=ticker)
-        try:
-            json_resp = sess.get(json_url, timeout=20)
-            json_resp.raise_for_status()
-            data = json_resp.json()
-
-            profile = (
-                data.get("quoteSummary", {})
-                .get("result", [{}])[0]  # type: ignore[index]
-                .get("assetProfile", {})
-            )
-            website = profile.get("website") or website
-            sector = profile.get("sector") or sector
-            industry = profile.get("industry") or industry
-        except Exception as exc:  # noqa: BLE001 – broad OK here, will log below
-            logger.warning("JSON endpoint failed for %s: %s", ticker, exc)
-
-    # One refresh attempt with a brand-new cookie/crumb ----------------------
-    if (
-        not any([website, sector, industry])
-        and session is not None
-        and retries_left > 0
-    ):
-        logger.info(
-            "Refreshing Yahoo session & retrying %s (remaining retries: %d)…",
-            ticker,
-            retries_left,
-        )
-        new_sess = _prepare_session()
-        return update_company_profile(
-            ticker, session=new_sess, retries_left=retries_left - 1
-        )
-
-    if not any([website, sector, industry]):
-        logger.info("No profile data found for %s", ticker)
-        return False
+    if yf is None:
+        yf = YahooFinance()
 
     wrote_anything = False
 
     # 1.  Insert / update website URL
-    if website:
-        try:
-            add_url(company_ticker=ticker, url_type="website", url=website)
-            wrote_anything = True
-        except Exception:  # noqa: BLE001 – error already logged in helper
-            pass  # keep going – maybe the sector/industry update works
+    profile = yf.get_profile(ticker, from_json=True)
+    if profile.get("website_url"):
+        add_url(company_ticker=ticker, url_type="website", url=profile["website_url"])
+        wrote_anything = True
 
     # 2.  Update sector / industry in *companies*
+    sector = profile.get("sector")
+    industry = profile.get("industry")
     if sector or industry:
         with get_db_connection() as conn:
             try:
@@ -235,6 +88,7 @@ def update_all_company_profiles(
     *,
     delay_between: float | None = None,
     start_from: str | None = None,
+    yf: Optional[YahooFinance] = None,
 ) -> None:  # noqa: D401
     """Iterate over all tickers in the DB and refresh their Yahoo profile data.
 
@@ -283,7 +137,7 @@ def update_all_company_profiles(
         if not isinstance(ticker, str):
             continue
 
-        success = update_company_profile(ticker, session=_prepare_session())
+        success = update_company_profile(ticker, yf=yf)
         if success:
             updated += 1
 
@@ -345,12 +199,14 @@ if __name__ == "__main__":  # pragma: no cover – manual usage
 
     delay_between = max(0.0, args.delay)
 
+    yf = YahooFinance()
+
     if args.tickers:
         create_tables()
         for idx, ticker in enumerate(args.tickers, start=1):
-            update_company_profile(ticker)
+            update_company_profile(ticker, yf=yf)
             if idx < len(args.tickers):
                 time.sleep(delay_between)
     else:
-        update_all_company_profiles(delay_between=delay_between, start_from=args.resume_from)
+        update_all_company_profiles(delay_between=delay_between, start_from=args.resume_from, yf=yf)
 
