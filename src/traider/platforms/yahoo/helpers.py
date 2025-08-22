@@ -2,6 +2,17 @@ from typing import Any, Optional, Tuple
 
 from bs4 import BeautifulSoup
 import pandas as pd 
+import logging
+
+logger = logging.getLogger(__name__)
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.StreamHandler(),
+        logging.FileHandler('earnings_collection.log')
+    ]
+)
 
 def extract_profile_data_html(html: str) -> Tuple[Optional[str], Optional[str], Optional[str]]:
     """Parse the Yahoo profile HTML and return (website_url, sector, industry).
@@ -111,5 +122,5 @@ def extract_earnings_data_json(api_payload: dict[str, Any]) -> pd.DataFrame:
         if col in df.columns:
             df[col] = pd.to_numeric(df[col], errors="coerce")
 
-    print(f"Successfully fetched {len(df)} earnings rows.")
+    logger.info(f"Successfully fetched {len(df)} earnings rows.")
     return df

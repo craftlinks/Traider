@@ -14,6 +14,14 @@ from traider.platforms.yahoo.helpers import extract_earnings_data_json, extract_
 
 # Set up module-level logger
 logger = logging.getLogger(__name__)
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.StreamHandler(),
+        logging.FileHandler('earnings_collection.log')
+    ]
+)
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -202,11 +210,11 @@ class YahooFinance:
                 if attempt < max_retries:
                     continue
                 else:
-                    print(f"Network-level error while contacting Yahoo Finance: {exc}")
+                    logger.error(f"Network-level error while contacting Yahoo Finance: {exc}")
             except Exception as exc:  # noqa: BLE001 – broad but prints error to user
                 logger.error(f"Unhandled error parsing Yahoo response (attempt {attempt + 1}): {exc}")
                 if attempt < max_retries:
                     continue
                 else:
-                    print(f"Unhandled error parsing Yahoo response: {exc}")
+                    logger.error(f"Unhandled error parsing Yahoo response: {exc}")
         return pd.DataFrame()
