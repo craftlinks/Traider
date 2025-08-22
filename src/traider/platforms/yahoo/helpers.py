@@ -61,7 +61,7 @@ def extract_profile_data_json(json: dict[str, Any]) -> Tuple[Optional[str], Opti
     return website, sector, industry
 
 
-def extract_earnings_data_json(json: dict[str, Any]) -> pd.DataFrame:
+def extract_earnings_data_json(api_payload: dict[str, Any]) -> pd.DataFrame:
     """Parse the Yahoo earnings JSON and return a DataFrame."""
     documents: list[dict] = (
                 api_payload.get("finance", {}).get("result", [{}])[0].get("documents", [])  # type: ignore[index]

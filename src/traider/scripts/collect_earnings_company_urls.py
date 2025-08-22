@@ -24,20 +24,12 @@ from crawlee.crawlers import PlaywrightCrawler, PlaywrightCrawlingContext
 from yarl import URL
 
 # Import existing modules
-from traider.platforms.yahoo.main import YahooFinance
+
 from traider.db.database import get_db_connection, create_tables
 
 from camoufox import AsyncNewBrowser
 
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.StreamHandler(),
-        logging.FileHandler('earnings_url_collection.log')
-    ]
-)
+
 logger = logging.getLogger(__name__)
 
 # Default output directory for company URL files
@@ -77,23 +69,7 @@ class CamoufoxPlugin(PlaywrightBrowserPlugin):
         )
 
 
-def get_todays_earnings_tickers() -> List[str]:
-    """Get ticker symbols for companies with earnings scheduled for today."""
-    logger.info("Fetching today's earnings data...")
 
-    today = date.today()
-    yf = YahooFinance()
-    earnings_df = yf.get_earnings(today)
-
-    if earnings_df.empty:
-        logger.warning("No earnings data found for today")
-        return []
-
-    # Extract unique ticker symbols
-    tickers = earnings_df['Symbol'].dropna().unique().tolist()
-    logger.info(f"Found {len(tickers)} companies with earnings today: {tickers}")
-
-    return tickers
 
 def get_company_website_from_db(ticker: str) -> Optional[str]:
     """Get company website URL from database for a given ticker."""
