@@ -53,7 +53,10 @@ def get_earnings_for_date_range(start_date: date, end_date: date, yf: YahooFinan
 def get_earnings_tickers_for_date_range(db_conn: sqlite3.Connection, start_date: date, end_date: date) -> list[str]:
     """Get a list of tickers for companies with earnings data for the given date range."""
     cursor = db_conn.cursor()
-    cursor.execute("SELECT DISTINCT company_ticker FROM earnings_reports WHERE report_datetime BETWEEN ? AND ?", (start_date, end_date))
+    cursor.execute(
+    "SELECT DISTINCT company_ticker FROM earnings_reports WHERE report_datetime >= ? AND report_datetime < ?",
+    (start_date, end_date + timedelta(days=1)),
+)
     return [row[0] for row in cursor.fetchall()]
 
 def save_earnings_data(df: pd.DataFrame, conn: sqlite3.Connection, max_retries: int = 3) -> None:

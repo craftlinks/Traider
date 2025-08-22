@@ -1,16 +1,18 @@
-from ast import List
 import asyncio
 from pathlib import Path
-from datetime import date
 from crawlee import ConcurrencySettings
 from crawlee.browsers import PlaywrightBrowserPlugin, PlaywrightBrowserController, BrowserPool
 from crawlee.crawlers import PlaywrightCrawler, PlaywrightCrawlingContext
 import logging
-from typing import Iterator, Optional
+from typing import Iterator, Optional, override
+from dspy import Prediction
+from traider.llm.press_release_urls import select_press_release_url
 from yarl import URL
 from urllib.parse import ParseResult, urlparse
 import tldextract
 from camoufox import AsyncNewBrowser
+import aiofiles
+from traider.db.data_manager import add_url
 logger = logging.getLogger(__name__)
 
 DEFAULT_KEYWORDS = ['invest', 'event', 'news', 'filing', 'press-release', 'press release']
@@ -27,17 +29,16 @@ def _get_ticker_lock(ticker: str) -> asyncio.Lock:
     lock = _ticker_file_locks.setdefault(ticker, asyncio.Lock())
     return lock
 
-def save_urls_to_file(ticker: str, urls: list[str]) -> None:
+async def save_urls_to_file(ticker: str, urls: list[str]) -> None:
     """Save collected URLs to a file for the company."""
-    filename = f"{ticker}_urls.txt"
+    filename = f"{ticker}_press_release_url.txt"
     filepath = OUTPUT_DIR / filename
 
     try:
-        with open(filepath, 'w', encoding='utf-8') as f:
-            f.write(f"# URLs collected for {ticker}")
+        async with aiofiles.open(filepath, 'w', encoding='utf-8') as f:
 
             for url in urls:
-                f.write(f"{url}\n")
+                await f.write(f"{url}\n")
 
         logger.info(f"Saved {len(urls)} URLs to {filepath}")
 
@@ -50,7 +51,7 @@ class CamoufoxPlugin(PlaywrightBrowserPlugin):
     but otherwise keeps the functionality of PlaywrightBrowserPlugin.
     """
 
-    @override  # type: ignore
+    @override
     async def new_browser(self) -> PlaywrightBrowserController:
         if not self._playwright:
             raise RuntimeError('Playwright browser plugin is not initialized.')
@@ -199,20 +200,6 @@ async def extract_company_urls(
 
     return list(set(filtered_links_iterator))
 
-async def extract_links(context: PlaywrightCrawlingContext, selector: str = 'a', keywords: Optional[list[str]] = None) -> list[str]:
-    # https://github.com/apify/crawlee-python/blob/08ab74a73ce7e01072132364ffb40c913f07e226/src/crawlee/crawlers/_playwright/_playwright_crawler.py#L364
-
-    elements = await context.page.query_selector_all(selector)
-
-    links_iterator: Iterator[str] = iter(
-                [url for element in elements if (url := await element.get_attribute('href')) is not None]
-            )
-    links_iterator = to_absolute_url_iterator(context.request.loaded_url or context.request.url, links_iterator)
-
-    filtered_links_iterator = _filter_links_iterator(links_iterator, context.request.url, 'same-domain', keywords=keywords)
-
-    return list(set(filtered_links_iterator))
-
 
 @crawler.router.default_handler
 async def request_handler(context: PlaywrightCrawlingContext) -> None:  # noqa: D401
@@ -229,30 +216,32 @@ async def request_handler(context: PlaywrightCrawlingContext) -> None:  # noqa: 
 
     logger.info("[%s] Processing page: %s", ticker, url)
 
-    # Best-effort scroll in case the page is lazy-loaded.
-    try:
-        await context.infinite_scroll()
-    except Exception as e:  # pragma: no-cover – network issues are expected occasionally
-        logger.error("[%s] Infinite scroll failed on %s: %s", ticker, url, e)
-
-    try:
-        links = await extract_company_urls(context, selector="a", keywords=DEFAULT_KEYWORDS)
-
-        # TODO Geert: DSPy select the press releases urls from the links
-
-        if len(links) == 0:
-            logger.info("[%s] No links found on this page", ticker)
-            return
-
-        logger.info("[%s] -  Extracted %d links on this page; total unique now %d", ticker, len(links))
-
-        # Serialize writes per ticker to avoid concurrent file access
-        async with _get_ticker_lock(ticker):
-            # Persist the current snapshot immediately
-            save_urls_to_file(ticker, sorted(links))
-
-        # TODO Geert: write the links to the database
+    # wait until the page is loaded
+    await context.page.wait_for_load_state("networkidle")
 
 
-    except Exception as e:  # pragma: no-cover
-        logger.error("[%s] Failed to extract links from %s: %s", ticker, url, e)
+    await context.infinite_scroll()
+
+
+    
+    links = await extract_company_urls(context, selector="a", keywords=DEFAULT_KEYWORDS)
+
+    if len(links) == 0:
+        logger.info("[%s] No links found on this page", ticker)
+        return
+
+    response: Prediction = await select_press_release_url.acall(input_urls=links)
+
+    logger.info("[%s] - Selected Press release URL: %s", ticker, response.output_url)
+
+    # Serialize writes per ticker to avoid concurrent file access
+    async with _get_ticker_lock(ticker):
+        # Persist the current snapshot immediately
+        await save_urls_to_file(ticker, [response.output_url])
+
+        # Persist the press release URL in the database
+        try:
+            add_url(company_ticker=ticker, url_type="press-release", url=response.output_url)
+            logger.info("[%s] Press release URL persisted to DB: %s", ticker, response.output_url)
+        except Exception as db_exc:  # pragma: no-cover
+            logger.error("[%s] Failed to persist press release URL to DB: %s", ticker, db_exc)
