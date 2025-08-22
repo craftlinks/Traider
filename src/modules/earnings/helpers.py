@@ -304,3 +304,6 @@ def save_profile_to_db(
             return
         
     logger.info("Company %s profile updated successfully", ticker)
+
+
+    

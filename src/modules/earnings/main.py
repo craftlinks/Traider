@@ -57,6 +57,7 @@ async def earnings_main():
         return
     
     # Fetch and store missing press releases urls and homepage urls
+    # TODO Geert: cleanup this code
     with get_db_connection() as db_conn:
         for ticker in tickers:
             press_releases_urls = fetch_urls_from_db(db_conn, [ticker], "press_releases")
@@ -87,10 +88,12 @@ async def earnings_main():
                 except Exception as e:
                     logger.error(f"Crawler execution failed: {e}")
                     continue
-                    
-        request = Request.from_url('', label='STOP')
-    await crawler_task
-    logger.info("Crawler execution completed successfully, press releases urls:")
+
+    with get_db_connection() as db_conn:
+        press_releases_urls = fetch_urls_from_db(db_conn, tickers, "press_releases")
+        logger.info(f"Press releases urls to be polled for earnings: {press_releases_urls}")
+
+    # TODO Geert: poll the press releases urls for earnings now
 
 
 if __name__ == "__main__": 

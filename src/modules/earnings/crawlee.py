@@ -238,11 +238,13 @@ async def request_handler(context: PlaywrightCrawlingContext) -> None:  # noqa: 
     try:
         links = await extract_company_urls(context, selector="a", keywords=DEFAULT_KEYWORDS)
 
+        # TODO Geert: DSPy select the press releases urls from the links
+
         if len(links) == 0:
             logger.info("[%s] No links found on this page", ticker)
             return
 
-        logger.info("[%s] Extracted %d links on this page; total unique now %d", ticker, len(links))
+        logger.info("[%s] -  Extracted %d links on this page; total unique now %d", ticker, len(links))
 
         # Serialize writes per ticker to avoid concurrent file access
         async with _get_ticker_lock(ticker):
