@@ -4,7 +4,8 @@ from typing import Any
 import pandas as pd
 import logging
 from datetime import date, timedelta
-from traider.platforms.yahoo.main import YahooFinance
+from traider.db.data_manager import add_url
+from traider.platforms.yahoo.main import Profile, YahooFinance
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(
@@ -258,3 +259,48 @@ def _validate_string(value: Any) -> str | None:
 
     return value_str
 
+def fetch_urls_from_db(db_conn: sqlite3.Connection, tickers: list[str], url_type: str) -> list[str]:
+    """Fetch URLs from the database for a given list of tickers and URL type."""
+    if not tickers:
+        return []
+
+    cursor = db_conn.cursor()
+    placeholders = ", ".join("?" for _ in tickers)
+    query = f"SELECT url FROM urls WHERE company_ticker IN ({placeholders}) AND url_type = ?"
+
+    params = tickers + [url_type]
+    cursor.execute(query, params)
+    
+    urls = [row[0] for row in cursor.fetchall()]
+    return urls
+
+
+def save_profile_to_db(
+    ticker: str,
+    profile: Profile,
+    db_conn: sqlite3.Connection,
+) -> None:
+
+    if profile.website_url:
+        add_url(company_ticker=ticker, url_type="website", url=profile.website_url)
+
+    sector = profile.sector
+    industry = profile.industry
+    if sector or industry:
+        try:
+            db_conn.execute(
+                """
+                UPDATE companies
+                SET sector   = COALESCE(?, sector),
+                    industry = COALESCE(?, industry)
+                WHERE ticker = ?
+                """,
+                (sector, industry, ticker.upper()),
+            )
+            db_conn.commit()
+        except Exception as exc:  # noqa: BLE001
+            logger.exception("DB error while updating company %s: %s", ticker, exc)
+            db_conn.rollback()
+            return
+        
+    logger.info("Company %s profile updated successfully", ticker)

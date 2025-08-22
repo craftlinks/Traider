@@ -94,22 +94,7 @@ def get_company_website_from_db(ticker: str) -> Optional[str]:
         logger.error(f"Error fetching website for {ticker}: {e}")
         return None
 
-def convert_to_absolute_url(base_url: str, relative_url: str) -> str:
-    """Convert a relative URL to an absolute URL using a base URL."""
-    return str(URL(base_url).join(URL(relative_url)))
 
-def is_url_absolute(url: str) -> bool:
-    """Check if a URL is absolute."""
-    url_parsed = URL(url)
-    return bool(url_parsed.scheme) and bool(url_parsed.raw_authority)
-
-def to_absolute_url_iterator(base_url: str, urls: Iterator[str]) -> Iterator[str]:
-    """Convert an iterator of relative URLs to absolute URLs using a base URL."""
-    for url in urls:
-        if is_url_absolute(url):
-            yield url
-        else:
-            yield convert_to_absolute_url(base_url, url)
 
 def _check_enqueue_strategy(
     strategy: str,

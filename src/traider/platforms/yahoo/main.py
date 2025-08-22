@@ -1,3 +1,4 @@
+from dataclasses import dataclass
 from datetime import date, timedelta
 import logging
 import time
@@ -47,6 +48,12 @@ YF_VISUALIZATION_API: Final[str] = (
 
 #    Courtesy delay between requests (seconds).  Be nice to Yahoo.
 _REQUEST_DELAY_S: Final[float] = 1.0
+
+@dataclass
+class Profile:
+    website_url: str | None
+    sector: str | None
+    industry: str | None
 
 # ---------------------------------------------------------------------------
 # YahooFinance class
@@ -112,7 +119,7 @@ class YahooFinance:
         else:
             raise RuntimeError("Unable to obtain Yahoo crumb token via any method.")
 
-    def get_profile(self, ticker: str, from_json: bool = True) -> dict[str, Any]:
+    def get_profile(self, ticker: str, from_json: bool = False) -> Profile:
         html_url = _YF_PROFILE_TEMPLATE.format(ticker=ticker)
         json_url = _YF_PROFILE_JSON_TEMPLATE.format(ticker=ticker)
 
@@ -121,7 +128,7 @@ class YahooFinance:
         else:
             return self._get_profile_with_retry(html_url, ticker, from_json=False)
 
-    def _get_profile_with_retry(self, url: str, ticker: str, from_json: bool) -> dict[str, Any]:
+    def _get_profile_with_retry(self, url: str, ticker: str, from_json: bool) -> Profile:
         """Helper method to get profile data with a single retry on RequestException."""
         max_attempts = 2
 
@@ -135,20 +142,16 @@ class YahooFinance:
                 else:
                     website_url, sector, industry = extract_profile_data_html(response.text)
 
-                return {
-                    "website_url": website_url,
-                    "sector": sector,
-                    "industry": industry,
-                }
+                return Profile(website_url, sector, industry)
             except requests.RequestException as exc:
                 if attempt < max_attempts - 1:
                     self._refresh_cookie_and_crumb()
                     logger.info(f"Failed to get profile for {ticker} (attempt {attempt + 1}/{max_attempts}): {exc}. Retrying...")
                 else:
                     logger.info(f"Failed to get profile for {ticker} after {max_attempts} attempts: {exc}")
-                    return {}
+                    return Profile(None, None, None)
 
-        return {}
+        return Profile(None, None, None)
 
     def get_earnings(self, start_date: date, end_date: Optional[date] = None, max_retries: int = 3) -> pd.DataFrame:
         date_str = start_date.strftime("%Y-%m-%d")

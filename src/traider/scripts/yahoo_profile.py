@@ -56,14 +56,14 @@ def update_company_profile(
     wrote_anything = False
 
     # 1.  Insert / update website URL
-    profile = yf.get_profile(ticker, from_json=True)
-    if profile.get("website_url"):
-        add_url(company_ticker=ticker, url_type="website", url=profile["website_url"])
+    profile = yf.get_profile(ticker, from_json=False)
+    if profile.website_url:
+        add_url(company_ticker=ticker, url_type="website", url=profile.website_url)
         wrote_anything = True
 
     # 2.  Update sector / industry in *companies*
-    sector = profile.get("sector")
-    industry = profile.get("industry")
+    sector = profile.sector
+    industry = profile.industry
     if sector or industry:
         with get_db_connection() as conn:
             try:

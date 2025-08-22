@@ -125,7 +125,7 @@ def add_url(*, company_ticker: str, url_type: str, url: str) -> None:
                 (company_ticker.upper(), url_type.lower(), url),
             )
             conn.commit()
-            logger.debug("Set %s URL for %s", url_type, company_ticker)
+            logger.info("Set %s URL for %s", url_type, company_ticker)
         except sqlite3.Error as exc:
             conn.rollback()
             logger.exception("SQLite error while adding url for %s: %s", company_ticker, exc)
