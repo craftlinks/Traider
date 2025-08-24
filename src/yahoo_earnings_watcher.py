@@ -48,6 +48,10 @@ sink = AsyncQueueSink(earnings_queue)
 
 stop_event = asyncio.Event()
 
+# ---------------------------------------------------------------------------
+# Earnings worker (consumer)
+# ---------------------------------------------------------------------------
+
 async def earnings_worker() -> None:
     """Background consumer that logs each :class:`EarningsEvent`."""
 
@@ -57,10 +61,22 @@ async def earnings_worker() -> None:
             # therefore does *not* hog the event-loop.
             earnings_event: EarningsEvent = await earnings_queue.get()
 
-            logger.info("Earnings event: %s", earnings_event)
+            logger.info(
+                "Ticker: %s | Call Time: %s | EPS Estimate: %s | EPS Actual: %s | EPS Surprise: %s | Surprise %%: %s",
+                earnings_event.ticker,
+                earnings_event.earnings_call_time,
+                earnings_event.eps_estimate,
+                earnings_event.eps_actual,
+                earnings_event.eps_surprise,
+                earnings_event.eps_surprise_percent,
+            )
         except Exception as exc:
             logger.error("[Worker] Error while processing earnings event: %s", exc)
 
+
+# ---------------------------------------------------------------------------
+# Main
+# ---------------------------------------------------------------------------
 
 async def main() -> None:
     args = parse_args()
