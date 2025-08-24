@@ -92,7 +92,7 @@ class YahooEarningsPoller(BasePoller):
             )
 
             # filter ids that are not in the cache
-            new_ids: list[int] = [id for id in written_ids if id not in self.cache]
+            new_ids: list[int] = [id for id in written_ids if str(id) not in self.cache]
             for new_id in new_ids:
                self.cache.add(str(new_id))
 

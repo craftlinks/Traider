@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import queue
+import asyncio
 from typing import Generic, TypeVar
 
 T = TypeVar("T")
@@ -67,4 +68,47 @@ class QueueSink(Generic[T]):
         except queue.Full:
             # If the queue is full and we time out, we drop the item silently to
             # avoid blocking the producer indefinitely.
+            pass
+
+
+# ---------------------------------------------------------------------------
+# Asynchronous variant
+# ---------------------------------------------------------------------------
+
+
+class AsyncQueueSink(Generic[T]):
+    """A callable sink that enqueues objects into an :class:`asyncio.Queue`.
+
+    This mirrors :class:`QueueSink` but targets :class:`asyncio.Queue` and uses
+    the non-blocking :py:meth:`asyncio.Queue.put_nowait` method so the producer
+    is *never* blocked, even inside synchronous contexts.
+
+    The flexible call signature allows the same usage patterns accepted by
+    :class:`QueueSink`:
+
+    1. ``sink(obj)`` – enqueue *obj* directly.
+    2. ``sink(poller_name, obj)`` – ignore *poller_name* and enqueue *obj*.
+
+    If the queue is full the item is silently dropped, matching the behaviour of
+    the synchronous variant.
+    """
+
+    def __init__(self, q: asyncio.Queue[T]) -> None:
+        self._q: asyncio.Queue[T] = q
+
+    def __call__(self, *args: T) -> None:  # noqa: D401 – simple verb phrase is fine
+        if not args:
+            return
+
+        if len(args) == 1:
+            payload = args[0]
+        elif len(args) == 2 and isinstance(args[0], str):
+            payload = args[1]  # type: ignore[assignment]
+        else:
+            payload = args[-1]  # type: ignore[assignment]
+
+        try:
+            self._q.put_nowait(payload)  # type: ignore[arg-type]
+        except asyncio.QueueFull:
+            # Drop silently if queue is at capacity.
             pass

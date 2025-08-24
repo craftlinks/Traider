@@ -2,12 +2,11 @@ import asyncio
 from dataclasses import dataclass
 from datetime import date, datetime
 import argparse
-import queue
 
 from dotenv.main import logger
 
 from src.traider.platforms.yahoo.main import EarningsEvent
-from traider.interfaces.queue_sink import QueueSink
+from traider.interfaces.queue_sink import AsyncQueueSink
 from traider.platforms.pollers.yahoo_earnings_poller import YahooEarningsPoller
 
 
@@ -32,30 +31,31 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-earnings_queue: queue.Queue[EarningsEvent] = queue.Queue(maxsize=1000)
-sink = QueueSink(earnings_queue)
+# Use an asynchronous queue to avoid blocking the event-loop.
+earnings_queue: asyncio.Queue[EarningsEvent] = asyncio.Queue(maxsize=1000)
+
+
+# ---------------------------------------------------------------------------
+# Use reusable AsyncQueueSink
+# ---------------------------------------------------------------------------
+
+sink = AsyncQueueSink(earnings_queue)
 
 
 stop_event = asyncio.Event()
 
 async def earnings_worker() -> None:
+    """Background consumer that logs each :class:`EarningsEvent`."""
+
     while not stop_event.is_set():
         try:
-            earnings_event: EarningsEvent = earnings_queue.get_nowait()
-        except queue.Empty:
-            continue
-        except Exception as e:
-            logger.error(f"Error getting earnings event: {e}")
-            continue
+            # Await an item – this *yields* control while the queue is empty and
+            # therefore does *not* hog the event-loop.
+            earnings_event: EarningsEvent = await earnings_queue.get()
 
-        try:
-            logger.info(f"Earnings event: {earnings_event}")
-        except Exception as e:
-            logger.error(f"Error logging earnings event: {e}")
-            continue
-
-
-
+            logger.info("Earnings event: %s", earnings_event)
+        except Exception as exc:
+            logger.error("[Worker] Error while processing earnings event: %s", exc)
 
 
 async def main() -> None:
