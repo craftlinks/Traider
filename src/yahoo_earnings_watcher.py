@@ -20,14 +20,18 @@ def parse_args() -> argparse.Namespace:
     """
 
     parser = argparse.ArgumentParser(
-        description="Watch Yahoo earnings calendar for a specific date (default: today)."
+        description="Watch Yahoo earnings calendar for a specific date (default: today) and interval (default: 1 minute)."
     )
     parser.add_argument(
         "--date",
         type=str,
         help="Date in ISO format YYYY-MM-DD to fetch earnings for (defaults to today).",
     )
-
+    parser.add_argument(
+        "--interval",
+        type=int,
+        help="Interval in seconds to poll for earnings (default: 1 minute).",
+    )
     return parser.parse_args()
 
 
@@ -69,7 +73,12 @@ async def main() -> None:
     else:
         poll_date = date.today()
 
-    poller = YahooEarningsPoller(date=poll_date)
+    if args.interval:
+        interval = args.interval
+    else:
+        interval = 60
+
+    poller = YahooEarningsPoller(date=poll_date, interval=interval)
     poller.set_sink(sink)
 
 

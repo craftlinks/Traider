@@ -50,10 +50,10 @@ __all__ = ["run_poller"]
 
 class YahooEarningsPoller(BasePoller):
    """Yahoo Earnings Calendar poller."""
-   def __init__(self, date: date = date.today()) -> None:
+   def __init__(self, date: date = date.today(), interval: int = 60) -> None:
       config = PollerConfig.from_env(
          "YEC",
-         default_interval=5
+         default_interval=interval
       )
       self.config = config
       logger.info("Initializing database…")
@@ -62,6 +62,7 @@ class YahooEarningsPoller(BasePoller):
       self.yf = YahooFinance()
       self.db_conn = get_db_connection()
       self.cache = get_shared_cache()
+      self.interval = interval if interval > 0 else config.polling_interval_seconds
 
    def get_poller_name(self) -> str:
       return "yahoo_earnings_calendar"
@@ -102,7 +103,7 @@ class YahooEarningsPoller(BasePoller):
             logger.error(f"Failed to save earnings data to database: {e}")
             raise
 
-         await asyncio.sleep(self.config.polling_interval_seconds)
+         await asyncio.sleep(self.interval)
 
    async def _emit_new_earnings(self, new_ids: list[int]) -> None:
       # retrieve the new items from the database
@@ -174,7 +175,7 @@ class YahooEarningsPoller(BasePoller):
       batch_size = 50
       total_rows = len(ee)
 
-      logger.info(f"Starting to save {total_rows} earnings reports to database")
+      logger.debug(f"Starting to save {total_rows} earnings reports to database")
 
       for start_idx in range(0, total_rows, batch_size):
          end_idx = min(start_idx + batch_size, total_rows)
@@ -248,7 +249,7 @@ class YahooEarningsPoller(BasePoller):
 
                # Commit the batch transaction
                conn.commit()
-               logger.info(f"Processed batch {start_idx//batch_size + 1}: {len(batch_ee)} rows, {successful_inserts} successful, {failed_inserts} failed")
+               logger.debug(f"Processed batch {start_idx//batch_size + 1}: {len(batch_ee)} rows, {successful_inserts} successful, {failed_inserts} failed")
 
          except sqlite3.Error as e:
                # Rollback on database errors
@@ -262,9 +263,9 @@ class YahooEarningsPoller(BasePoller):
                   time.sleep(0.1)  # Brief pause before retry
                   return YahooEarningsPoller._save_earnings_data(batch_ee, conn, max_retries - 1)
 
-      logger.info(f"Database save operation completed: {successful_inserts} successful, {failed_inserts} failed")
+      logger.debug(f"Database save operation completed: {successful_inserts} successful, {failed_inserts} failed")
       if successful_inserts > 0:
-         logger.info(f"Successfully saved {successful_inserts} earnings reports to the database.")
+         logger.debug(f"Successfully saved {successful_inserts} earnings reports to the database.")
       if failed_inserts > 0:
          logger.error(f"Failed to save {failed_inserts} earnings reports due to data issues.")
 

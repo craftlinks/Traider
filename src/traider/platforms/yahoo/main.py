@@ -208,7 +208,7 @@ class YahooFinance:
         max_retries: int = 3,
     ) -> pd.DataFrame | List[EarningsEvent]:
         date_str = start_date.strftime("%Y-%m-%d")
-        logger.info(f"--- Starting earnings fetch for {date_str} ---")
+        logger.info(f"--- Earnings fetch for {date_str} ---")
         
         for attempt in range(max_retries + 1):
             try:

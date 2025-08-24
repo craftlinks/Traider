@@ -122,5 +122,5 @@ def extract_earnings_data_json(api_payload: dict[str, Any]) -> pd.DataFrame:
         if col in df.columns:
             df[col] = pd.to_numeric(df[col], errors="coerce")
 
-    logger.info(f"Successfully fetched {len(df)} earnings rows.")
+    logger.debug(f"Successfully fetched {len(df)} earnings rows.")
     return df
