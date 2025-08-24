@@ -45,15 +45,15 @@ __all__ = ["run_poller"]
 
 class YahooEarningsCalendarPoller(BasePoller):
    """Yahoo Earnings Calendar poller."""
-   def __init__(self) -> None:
+   def __init__(self, date: date = date.today()) -> None:
       config = PollerConfig.from_env(
          "YEC",
-         default_interval=3
+         default_interval=5
       )
       self.config = config
       logger.info("Initializing database…")
       create_tables()
-      self.today = date.today()
+      self.today = date
       self.yf = YahooFinance()
       self.db_conn = get_db_connection()
 
@@ -66,14 +66,19 @@ class YahooEarningsCalendarPoller(BasePoller):
       if df.empty:
          logger.info("No earnings data fetched for today")
          return pd.DataFrame()
-      
-      if persist_db:
+      return df
+
+   def run_polling_loop(self) -> None:
+      while True:
+         df = self.fetch_data()
+
          try:
             YahooEarningsCalendarPoller._save_earnings_data(df, self.db_conn)
          except Exception as e:
             logger.error(f"Failed to save earnings data to database: {e}")
             raise
-      return df
+
+         time.sleep(self.config.polling_interval_seconds)
 
    def parse_items(self, data: Response | Dict[str, Any] | pd.DataFrame) -> list[BaseItem]:
       raise NotImplementedError("YahooEarningsCalendarPoller does not support parsing items")
