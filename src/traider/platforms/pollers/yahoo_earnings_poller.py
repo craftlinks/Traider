@@ -1,5 +1,6 @@
 from __future__ import annotations
 from datetime import datetime
+import math
 
 from traider.platforms.cache import get_shared_cache
 from traider.platforms.pollers.common.base_poller import BaseItem, BasePoller, PollerConfig
@@ -83,6 +84,9 @@ class YahooEarningsPoller(BasePoller):
    async def async_polling_loop(self) -> None:
       while True:
          ee: list[EarningsEvent] = await self.fetch_data()
+
+         # filter out earnings events for which we have an estimated earnings per share
+         ee = [earning for earning in ee if earning.eps_estimate is not None and not math.isnan(earning.eps_estimate)]
 
          try:
             written_ids: list[int] = await asyncio.to_thread(
