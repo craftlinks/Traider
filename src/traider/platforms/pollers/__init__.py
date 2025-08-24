@@ -7,6 +7,7 @@ from .globe_newswire_poller import GlobeNewswirePoller
 from .newsroom_poller import NewsroomPoller
 from .pr_newswire_poller import PRNewswirePoller
 from .sec_poller import SECPoller
+from .yahoo_earnings_calendar import YahooEarningsCalendarPoller
 
 # Import base classes for custom poller development from common folder
 from .common.base_poller import BasePoller, BaseItem, PollerConfig
@@ -21,6 +22,7 @@ __all__ = [
     "NewsroomPoller",
     "PRNewswirePoller", 
     "SECPoller",
+    "YahooEarningsCalendarPoller",
     # Base classes
     "BasePoller",
     "BaseItem", 

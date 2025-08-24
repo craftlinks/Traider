@@ -16,6 +16,7 @@ from requests import Response, Session
 
 from .poller_utils import build_session, filter_new_items
 from traider.platforms.cache import get_shared_cache
+import pandas as pd
 
 # Use find_dotenv to locate the nearest .env starting from the CWD and moving up
 # This is more reliable when poller modules live in nested sub-packages but are
@@ -112,12 +113,12 @@ class BasePoller(ABC):
         pass
 
     @abstractmethod
-    def fetch_data(self) -> Response | Dict[str, Any]:
+    def fetch_data(self) -> Response | Dict[str, Any] | pd.DataFrame:
         """Fetch data from the source. Return Response or parsed dict."""
         pass
 
     @abstractmethod
-    def parse_items(self, data: Response | Dict[str, Any]) -> List[BaseItem]:
+    def parse_items(self, data: Response | Dict[str, Any] | pd.DataFrame) -> List[BaseItem]:
         """Parse the fetched data into BaseItem objects."""
         pass
 
