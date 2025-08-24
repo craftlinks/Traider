@@ -127,7 +127,7 @@ class BasePoller(ABC):
         """Extract full article text from an item's URL."""
         pass
 
-    def set_sink(self, sink: Callable[[str, BaseItem], None]) -> None:
+    def set_sink(self, sink: Callable) -> None:
         """Register a sink callable to receive processed items.
 
         The sink will be called with (poller_name, item) for each new item.

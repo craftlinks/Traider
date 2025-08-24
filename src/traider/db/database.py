@@ -20,7 +20,7 @@ def get_db_connection() -> sqlite3.Connection:  # noqa: D401 (imperative mood pr
 
     Foreign-key constraints are enabled for every connection.
     """
-    conn = sqlite3.connect(DATABASE_FILE)
+    conn = sqlite3.connect(DATABASE_FILE, check_same_thread=False)
     # Enable accessing columns by name: row["column_name"]
     conn.row_factory = sqlite3.Row  # type: ignore [assignment]
     # Enforce foreign-key constraints

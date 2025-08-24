@@ -1,13 +1,15 @@
 from dataclasses import dataclass
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 import logging
+import sqlite3
 import time
-from typing import Any, Final, Optional
+from typing import Any, Final, Optional, List
 from urllib.parse import quote_plus
 
 import pandas as pd
 import requests
 from traider.platforms.yahoo.helpers import extract_earnings_data_json, extract_profile_data_html, extract_profile_data_json
+import math
 
 # ---------------------------------------------------------------------------
 # Configuration & constants
@@ -49,11 +51,55 @@ YF_VISUALIZATION_API: Final[str] = (
 #    Courtesy delay between requests (seconds).  Be nice to Yahoo.
 _REQUEST_DELAY_S: Final[float] = 1.0
 
+# ---------------------------------------------------------------------------
+# Utility helpers
+# ---------------------------------------------------------------------------
+
+
+def _to_float(val: Any) -> float:
+    """Best-effort conversion to ``float`` returning ``nan`` on failure."""
+    try:
+        if val is None or (isinstance(val, float) and pd.isna(val)):
+            return float("nan")
+        return float(val)
+    except (TypeError, ValueError):
+        return float("nan")
+
 @dataclass
 class Profile:
     website_url: str | None
     sector: str | None
     industry: str | None
+
+@dataclass
+class EarningsEvent:
+    id: int
+    ticker: str
+    company_name: str
+    event_name: str
+    time_type: str
+    earnings_call_time: datetime | None
+    eps_estimate: float
+    eps_actual: float
+    eps_surprise: float
+    eps_surprise_percent: float
+    market_cap: float
+
+    @staticmethod
+    def from_db_row(row: sqlite3.Row) -> "EarningsEvent":
+        return EarningsEvent(
+            id=row["id"],
+            ticker=row["company_ticker"],
+            company_name='', # TODO: get company name from db
+            event_name=row["event_name"],
+            time_type=row["time_type"],
+            earnings_call_time=row["report_datetime"],
+            eps_estimate=row["eps_estimate"],
+            eps_actual=row["reported_eps"],
+            eps_surprise=row["reported_eps"] - row["eps_estimate"] if row["eps_estimate"] is not None and row["reported_eps"] is not None else float("nan"),
+            eps_surprise_percent=row["surprise_percentage"],
+            market_cap=row["market_cap"],
+        )
 
 # ---------------------------------------------------------------------------
 # YahooFinance class
@@ -153,7 +199,14 @@ class YahooFinance:
 
         return Profile(None, None, None)
 
-    def get_earnings(self, start_date: date, end_date: Optional[date] = None, max_retries: int = 3) -> pd.DataFrame:
+    def get_earnings(
+        self,
+        start_date: date,
+        end_date: Optional[date] = None,
+        *,
+        as_dataframe: bool = True,
+        max_retries: int = 3,
+    ) -> pd.DataFrame | List[EarningsEvent]:
         date_str = start_date.strftime("%Y-%m-%d")
         logger.info(f"--- Starting earnings fetch for {date_str} ---")
         
@@ -207,7 +260,54 @@ class YahooFinance:
                 data_resp.raise_for_status()
                 api_payload = data_resp.json()
                 df = extract_earnings_data_json(api_payload)
-                return df
+
+                # Return early if caller wants the raw DataFrame
+                if as_dataframe:
+                    return df
+
+                # Otherwise convert to a list of EarningsEvent objects
+                events: list[EarningsEvent] = []
+                if df.empty:
+                    return events
+
+                # Map DataFrame columns to EarningsEvent attributes
+                for _, series in df.iterrows():
+                    try:
+                        id_val_raw = series.get("id", -1)
+                        id_val = int(id_val_raw) if id_val_raw is not None and id_val_raw != "" else -1
+
+                        eps_est = _to_float(series.get("EPS Estimate"))
+                        eps_act = _to_float(series.get("Reported EPS"))
+                        surprise_pct = _to_float(series.get("Surprise (%)"))
+
+                        eps_surp = eps_act - eps_est if not math.isnan(eps_est) and not math.isnan(eps_act) else float("nan")
+
+                        # Earnings Call Time – convert pandas Timestamp to datetime
+                        ect_raw = series.get("Earnings Call Time")
+                        if isinstance(ect_raw, pd.Timestamp):
+                            ect_dt = ect_raw.to_pydatetime()
+                        else:
+                            ect_dt = ect_raw  # type: ignore[assignment]
+
+                        events.append(
+                            EarningsEvent(
+                                id=id_val,
+                                ticker=str(series.get("Symbol", "")),
+                                company_name=str(series.get("Company", "")),
+                                event_name=str(series.get("Event Name", "")),
+                                time_type=str(series.get("Time Type", "")),
+                                earnings_call_time=ect_dt,
+                                eps_estimate=eps_est,
+                                eps_actual=eps_act,
+                                eps_surprise=eps_surp,
+                                eps_surprise_percent=surprise_pct,
+                                market_cap=_to_float(series.get("Market Cap")),
+                            )
+                        )
+                    except Exception as exc:  # noqa: BLE001
+                        logger.debug("Failed to convert row to EarningsEvent: %s; row data: %s", exc, series.to_dict())
+
+                return events
             except requests.RequestException as exc:
                 logger.error(f"Network-level error while contacting Yahoo Finance (attempt {attempt + 1}): {exc}")
                 if attempt < max_retries:
