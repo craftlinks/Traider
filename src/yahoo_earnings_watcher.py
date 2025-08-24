@@ -35,8 +35,25 @@ def parse_args() -> argparse.Namespace:
 earnings_queue: queue.Queue[EarningsEvent] = queue.Queue(maxsize=1000)
 sink = QueueSink(earnings_queue)
 
-async def earnings_worker(earnings_event: EarningsEvent) -> None:
-    logger.info(f"Earnings event: {earnings_event}")
+
+stop_event = asyncio.Event()
+
+async def earnings_worker() -> None:
+    while not stop_event.is_set():
+        try:
+            earnings_event: EarningsEvent = earnings_queue.get_nowait()
+        except queue.Empty:
+            continue
+        except Exception as e:
+            logger.error(f"Error getting earnings event: {e}")
+            continue
+
+        try:
+            logger.info(f"Earnings event: {earnings_event}")
+        except Exception as e:
+            logger.error(f"Error logging earnings event: {e}")
+            continue
+
 
 
 
@@ -55,15 +72,21 @@ async def main() -> None:
     poller = YahooEarningsPoller(date=poll_date)
     poller.set_sink(sink)
 
+
+
     # Start the asynchronous polling loop as a background task inside the
     # currently running event-loop instead of spawning an extra thread.
     task = asyncio.create_task(poller.async_polling_loop())  # type: ignore[attr-defined]
     logger.info("Started %s as asyncio task.", poller.get_poller_name())
 
+    earnings_worker_task = asyncio.create_task(earnings_worker())
+
     # Wait for task completion to keep main alive. The task itself runs an
     # infinite loop, so this effectively blocks until cancellation.
     await task
-
+    await earnings_worker_task
 
 if __name__ == "__main__":
     asyncio.run(main())
+
+# TODO Geert fix the queue sink!
