@@ -1,6 +1,7 @@
 import sqlite3
 import logging
 from pathlib import Path
+from typing import Optional
 
 # Configure module-level logger
 logger = logging.getLogger(__name__)
@@ -28,107 +29,109 @@ def get_db_connection() -> sqlite3.Connection:  # noqa: D401 (imperative mood pr
     return conn
 
 
-def create_tables() -> None:  # noqa: D401
+def create_tables(conn: Optional[sqlite3.Connection] = None) -> None:  # noqa: D401
     """Create all database tables if they do not already exist."""
-    with get_db_connection() as conn:
-        cursor = conn.cursor()
+    if conn is None:
+        conn = get_db_connection()
 
-        # --- Companies Table ---
+    cursor = conn.cursor()
 
-        cursor.execute(
-            """
-            CREATE TABLE IF NOT EXISTS companies (
-                ticker TEXT PRIMARY KEY,
-                cik TEXT,
-                company_name TEXT NOT NULL,
-                sector TEXT,
-                industry TEXT
-            );
-            """
-        )
+    # --- Companies Table ---
 
-        # --- Exchanges Table ---
-        cursor.execute(
-            """
-            CREATE TABLE IF NOT EXISTS exchanges (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                name TEXT UNIQUE NOT NULL
-            );
-            """
-        )
+    cursor.execute(
+        """
+        CREATE TABLE IF NOT EXISTS companies (
+            ticker TEXT PRIMARY KEY,
+            cik TEXT,
+            company_name TEXT NOT NULL,
+            sector TEXT,
+            industry TEXT
+        );
+        """
+    )
 
-        # --- Company-Exchanges Linking Table ---
-        cursor.execute(
-            """
-            CREATE TABLE IF NOT EXISTS company_exchanges (
-                company_ticker TEXT NOT NULL,
-                exchange_id INTEGER NOT NULL,
-                PRIMARY KEY (company_ticker, exchange_id),
-                FOREIGN KEY (company_ticker) REFERENCES companies (ticker) ON DELETE CASCADE,
-                FOREIGN KEY (exchange_id) REFERENCES exchanges (id) ON DELETE CASCADE
-            );
-            """
-        )
+    # --- Exchanges Table ---
+    cursor.execute(
+        """
+        CREATE TABLE IF NOT EXISTS exchanges (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT UNIQUE NOT NULL
+        );
+        """
+    )
 
-        # --- URLs Table ---
-        cursor.execute(
-            """
-            CREATE TABLE IF NOT EXISTS urls (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                company_ticker TEXT NOT NULL,
-                url_type TEXT NOT NULL,
-                url TEXT NOT NULL,
-                FOREIGN KEY (company_ticker) REFERENCES companies (ticker) ON DELETE CASCADE,
-                UNIQUE (company_ticker, url_type)
-            );
-            """
-        )
+    # --- Company-Exchanges Linking Table ---
+    cursor.execute(
+        """
+        CREATE TABLE IF NOT EXISTS company_exchanges (
+            company_ticker TEXT NOT NULL,
+            exchange_id INTEGER NOT NULL,
+            PRIMARY KEY (company_ticker, exchange_id),
+            FOREIGN KEY (company_ticker) REFERENCES companies (ticker) ON DELETE CASCADE,
+            FOREIGN KEY (exchange_id) REFERENCES exchanges (id) ON DELETE CASCADE
+        );
+        """
+    )
 
-        # --- Earnings Reports Table ---
-        cursor.execute(
-            """
-            CREATE TABLE IF NOT EXISTS earnings_reports (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                company_ticker TEXT NOT NULL,
-                report_datetime TEXT NOT NULL,
-                fiscal_quarter INTEGER,
-                fiscal_year INTEGER,
-                event_name TEXT,
-                time_type TEXT,
-                eps_estimate REAL,
-                reported_eps REAL,
-                surprise_percentage REAL,
-                market_cap INTEGER,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                UNIQUE(company_ticker, report_datetime),
-                FOREIGN KEY (company_ticker) REFERENCES companies (ticker) ON DELETE CASCADE
-            );
-            """
-        )
+    # --- URLs Table ---
+    cursor.execute(
+        """
+        CREATE TABLE IF NOT EXISTS urls (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            company_ticker TEXT NOT NULL,
+            url_type TEXT NOT NULL,
+            url TEXT NOT NULL,
+            FOREIGN KEY (company_ticker) REFERENCES companies (ticker) ON DELETE CASCADE,
+            UNIQUE (company_ticker, url_type)
+        );
+        """
+    )
 
-        # Trigger to auto-update the 'updated_at' timestamp whenever a row changes
-        cursor.execute(
-            """
-            CREATE TRIGGER IF NOT EXISTS update_earnings_reports_updated_at
-            AFTER UPDATE ON earnings_reports
-            FOR EACH ROW
-            BEGIN
-                UPDATE earnings_reports
-                SET updated_at = CURRENT_TIMESTAMP
-                WHERE id = OLD.id;
-            END;
-            """
-        )
+    # --- Earnings Reports Table ---
+    cursor.execute(
+        """
+        CREATE TABLE IF NOT EXISTS earnings_reports (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            company_ticker TEXT NOT NULL,
+            report_datetime TEXT NOT NULL,
+            fiscal_quarter INTEGER,
+            fiscal_year INTEGER,
+            event_name TEXT,
+            time_type TEXT,
+            eps_estimate REAL,
+            reported_eps REAL,
+            surprise_percentage REAL,
+            market_cap INTEGER,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(company_ticker, report_datetime),
+            FOREIGN KEY (company_ticker) REFERENCES companies (ticker) ON DELETE CASCADE
+        );
+        """
+    )
 
-        # Index for quicker look-ups of a company's earnings history
-        cursor.execute("DROP INDEX IF EXISTS idx_earnings_ticker_date;")
-        cursor.execute(
-            "CREATE INDEX IF NOT EXISTS idx_earnings_ticker_datetime ON earnings_reports (company_ticker, report_datetime DESC);"
-        )
+    # Trigger to auto-update the 'updated_at' timestamp whenever a row changes
+    cursor.execute(
+        """
+        CREATE TRIGGER IF NOT EXISTS update_earnings_reports_updated_at
+        AFTER UPDATE ON earnings_reports
+        FOR EACH ROW
+        BEGIN
+            UPDATE earnings_reports
+            SET updated_at = CURRENT_TIMESTAMP
+            WHERE id = OLD.id;
+        END;
+        """
+    )
 
-        conn.commit()
-        logger.info("Database tables created or verified successfully at %s", DATABASE_FILE)
+    # Index for quicker look-ups of a company's earnings history
+    cursor.execute("DROP INDEX IF EXISTS idx_earnings_ticker_date;")
+    cursor.execute(
+        "CREATE INDEX IF NOT EXISTS idx_earnings_ticker_datetime ON earnings_reports (company_ticker, report_datetime DESC);"
+    )
+
+    conn.commit()
+    logger.info("Database tables created or verified successfully at %s", DATABASE_FILE)
 
 
 if __name__ == "__main__":

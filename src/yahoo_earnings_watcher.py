@@ -1,5 +1,4 @@
 import asyncio
-from dataclasses import dataclass
 from datetime import date, datetime
 import argparse
 
@@ -113,5 +112,3 @@ async def main() -> None:
 
 if __name__ == "__main__":
     asyncio.run(main())
-
-# TODO Geert fix the queue sink!

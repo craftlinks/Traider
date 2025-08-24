@@ -199,10 +199,72 @@ class YahooFinance:
 
         return Profile(None, None, None)
 
+    def _df_to_events(self, df: pd.DataFrame) -> list[EarningsEvent]:
+        """Convert a Yahoo earnings DataFrame returned by :py:meth:`extract_earnings_data_json`
+        into a list of :class:`~EarningsEvent` instances.
+
+        The helper encapsulates the somewhat verbose per-row mapping logic so that
+        both :py:meth:`get_earnings` and :py:meth:`get_earnings_for_date_range` can
+        share a single implementation.
+        """
+        events: list[EarningsEvent] = []
+
+        if df.empty:
+            return events
+
+        for _, series in df.iterrows():
+            try:
+                # ``id`` is not always present – default to -1 for *unknown*.
+                id_val_raw = series.get("id", -1)
+                id_val = int(id_val_raw) if id_val_raw not in (None, "") else -1
+
+                eps_est = _to_float(series.get("EPS Estimate"))
+                eps_act = _to_float(series.get("Reported EPS"))
+                surprise_pct = _to_float(series.get("Surprise (%)"))
+
+                eps_surp = (
+                    eps_act - eps_est
+                    if not math.isnan(eps_est) and not math.isnan(eps_act)
+                    else float("nan")
+                )
+
+                # Earnings Call Time – convert pandas *Timestamp* → *datetime*
+                ect_raw = series.get("Earnings Call Time")
+                if isinstance(ect_raw, pd.Timestamp):
+                    ect_dt = ect_raw.to_pydatetime()
+                else:
+                    ect_dt = ect_raw  # type: ignore[assignment]
+
+                events.append(
+                    EarningsEvent(
+                        id=id_val,
+                        ticker=str(series.get("Symbol", "")),
+                        company_name=str(series.get("Company", "")),
+                        event_name=str(series.get("Event Name", "")),
+                        time_type=str(series.get("Time Type", "")),
+                        earnings_call_time=ect_dt,
+                        eps_estimate=eps_est,
+                        eps_actual=eps_act,
+                        eps_surprise=eps_surp,
+                        eps_surprise_percent=surprise_pct,
+                        market_cap=_to_float(series.get("Market Cap")),
+                    )
+                )
+            except Exception as exc:  # noqa: BLE001
+                logger.debug(
+                    "Failed to convert row to EarningsEvent: %s; row data: %s",
+                    exc,
+                    series.to_dict(),
+                )
+        return events
+
+    # ---------------------------------------------------------------------------
+    # Public API methods
+    # ---------------------------------------------------------------------------
+    
     def get_earnings(
         self,
         start_date: date,
-        end_date: Optional[date] = None,
         *,
         as_dataframe: bool = True,
         max_retries: int = 3,
@@ -266,48 +328,7 @@ class YahooFinance:
                     return df
 
                 # Otherwise convert to a list of EarningsEvent objects
-                events: list[EarningsEvent] = []
-                if df.empty:
-                    return events
-
-                # Map DataFrame columns to EarningsEvent attributes
-                for _, series in df.iterrows():
-                    try:
-                        id_val_raw = series.get("id", -1)
-                        id_val = int(id_val_raw) if id_val_raw is not None and id_val_raw != "" else -1
-
-                        eps_est = _to_float(series.get("EPS Estimate"))
-                        eps_act = _to_float(series.get("Reported EPS"))
-                        surprise_pct = _to_float(series.get("Surprise (%)"))
-
-                        eps_surp = eps_act - eps_est if not math.isnan(eps_est) and not math.isnan(eps_act) else float("nan")
-
-                        # Earnings Call Time – convert pandas Timestamp to datetime
-                        ect_raw = series.get("Earnings Call Time")
-                        if isinstance(ect_raw, pd.Timestamp):
-                            ect_dt = ect_raw.to_pydatetime()
-                        else:
-                            ect_dt = ect_raw  # type: ignore[assignment]
-
-                        events.append(
-                            EarningsEvent(
-                                id=id_val,
-                                ticker=str(series.get("Symbol", "")),
-                                company_name=str(series.get("Company", "")),
-                                event_name=str(series.get("Event Name", "")),
-                                time_type=str(series.get("Time Type", "")),
-                                earnings_call_time=ect_dt,
-                                eps_estimate=eps_est,
-                                eps_actual=eps_act,
-                                eps_surprise=eps_surp,
-                                eps_surprise_percent=surprise_pct,
-                                market_cap=_to_float(series.get("Market Cap")),
-                            )
-                        )
-                    except Exception as exc:  # noqa: BLE001
-                        logger.debug("Failed to convert row to EarningsEvent: %s; row data: %s", exc, series.to_dict())
-
-                return events
+                return self._df_to_events(df)
             except requests.RequestException as exc:
                 logger.error(f"Network-level error while contacting Yahoo Finance (attempt {attempt + 1}): {exc}")
                 if attempt < max_retries:
@@ -321,3 +342,278 @@ class YahooFinance:
                 else:
                     logger.error(f"Unhandled error parsing Yahoo response: {exc}")
         return pd.DataFrame()
+
+    def get_earnings_for_date_range(self, start_date: date, end_date: date, as_dataframe: bool = False) -> pd.DataFrame | List[EarningsEvent]:
+        date_range =  [start_date + timedelta(days=i) for i in range((end_date - start_date).days + 1)]
+
+        # Initialise containers based on desired return type
+        if as_dataframe:
+            aggregated_df: pd.DataFrame = pd.DataFrame()
+            aggregated_events: list[EarningsEvent] = []  # Always define for type safety
+        else:
+            aggregated_events = []
+            aggregated_df = pd.DataFrame()  # Dummy for type safety
+
+        successful_fetches = 0
+        failed_fetches = 0
+
+        for day in date_range:
+            try:
+                logger.info(f"Fetching earnings data for {day}")
+                day_data = self.get_earnings(day, as_dataframe=as_dataframe)
+
+                # ------------------------------------------------------------------
+                # Branch depending on the expected return type
+                # ------------------------------------------------------------------
+                if as_dataframe:
+                    if isinstance(day_data, pd.DataFrame) and not day_data.empty:
+                        aggregated_df = pd.concat([aggregated_df, day_data], ignore_index=True)  # type: ignore[arg-type]
+                        successful_fetches += 1
+                        logger.info(f"Successfully fetched {len(day_data)} rows for {day}")
+                    else:
+                        logger.warning(f"No DataFrame returned for {day}")
+                        failed_fetches += 1
+                else:
+                    if isinstance(day_data, list) and day_data:
+                        aggregated_events.extend(day_data)
+                        successful_fetches += 1
+                        logger.info(f"Successfully fetched {len(day_data)} events for {day}")
+                    else:
+                        logger.warning(f"No events returned for {day}")
+                        failed_fetches += 1
+
+            except Exception as e:
+                logger.error(f"Failed to fetch data for {day}: {e}")
+                failed_fetches += 1
+                continue
+
+            # Be polite to Yahoo's servers – wait before the next request
+            time.sleep(_REQUEST_DELAY_S)
+
+        # ----------------------------------------------------------------------
+        # Final aggregation & return
+        # ----------------------------------------------------------------------
+        if as_dataframe:
+            if aggregated_df is not None and not aggregated_df.empty:
+                logger.debug(f"--- Combined DataFrame ({len(aggregated_df)} total rows) ---")
+                logger.debug(f"Successfully fetched data for {successful_fetches} days, failed for {failed_fetches} days")
+                logger.debug(aggregated_df.head(10))
+            else:
+                logger.debug("No earnings data fetched for the date range")
+            return aggregated_df if aggregated_df is not None else pd.DataFrame()
+        else:
+            if aggregated_events:
+                logger.debug(f"--- Combined Events ({len(aggregated_events)} total) ---")
+                logger.debug(f"Successfully fetched data for {successful_fetches} days, failed for {failed_fetches} days")
+            else:
+                logger.debug("No earnings events fetched for the date range")
+            return aggregated_events
+
+    # NOTE: This helper remains synchronous because the sqlite3 module is
+    # inherently blocking.  It is invoked through `asyncio.to_thread` by the
+    # caller to avoid blocking the event-loop.
+    @staticmethod
+    def save_earnings_data_to_db(ee: list[EarningsEvent], conn: sqlite3.Connection, max_retries: int = 3) -> List[int]:
+        """Save earnings data from a DataFrame into the database with robust error handling.
+
+        This function performs two main operations:
+        1.  Inserts new companies into the `companies` table if they don't exist.
+        2.  Inserts or updates earnings reports in the `earnings_reports` table.
+
+        An `INSERT OR IGNORE` strategy is used for new companies, while an `UPSERT`
+        (insert on conflict update) is used for earnings reports to keep them fresh.
+
+        Parameters
+        ----------
+        df:
+            DataFrame with earnings data, matching the column names from Yahoo.
+        conn:
+            Active SQLite database connection.
+        max_retries:
+            Maximum number of retry attempts for database operations.
+        """
+        if not ee:
+            logger.info("No data to save - DataFrame is empty")
+            return []
+
+
+        cursor = conn.cursor()
+        successful_inserts = 0
+        failed_inserts = 0
+        # Collect the primary-key IDs of rows that are inserted or up-serted so that the
+        # caller can use them (e.g. for downstream processing or logging).
+        written_ids: list[int] = []
+
+        # Process data in batches to improve performance and error recovery
+        batch_size = 50
+        total_rows = len(ee)
+
+        logger.debug(f"Starting to save {total_rows} earnings reports to database")
+
+        for start_idx in range(0, total_rows, batch_size):
+            end_idx = min(start_idx + batch_size, total_rows)
+            batch_ee = ee[start_idx:end_idx]
+
+            try:
+                # Begin transaction for this batch
+                conn.execute("BEGIN TRANSACTION")
+
+                for row in batch_ee:
+                    try:
+                        # Validate and clean data
+                        symbol = YahooFinance._validate_ticker(row.ticker)
+                        company_name = YahooFinance._validate_company_name(row.company_name)
+                        earnings_call_time = YahooFinance._validate_datetime(row.earnings_call_time)
+
+                        if not symbol or not company_name:
+                            logger.warning(f"Skipping row with invalid symbol '{row.ticker}' or company name '{row.company_name}'")
+                            failed_inserts += 1
+                            continue
+
+                        # --- 1. Ensure company exists in `companies` table ---
+                        try:
+                            cursor.execute(
+                                "INSERT OR IGNORE INTO companies (ticker, company_name) VALUES (?, ?)",
+                                (symbol, company_name),
+                            )
+                        except sqlite3.Error as e:
+                            logger.warning(f"Failed to insert company {symbol}: {e}")
+
+                        # --- 2. Insert or update the earnings report ---
+                        market_cap = YahooFinance._validate_numeric(row.market_cap)
+
+                        sql = """
+                            INSERT INTO earnings_reports (
+                                company_ticker, report_datetime, event_name, time_type,
+                                eps_estimate, reported_eps, surprise_percentage, market_cap
+                            )
+                            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                            ON CONFLICT(company_ticker, report_datetime) DO UPDATE SET
+                                event_name=excluded.event_name,
+                                time_type=excluded.time_type,
+                                eps_estimate=excluded.eps_estimate,
+                                reported_eps=excluded.reported_eps,
+                                surprise_percentage=excluded.surprise_percentage,
+                                market_cap=excluded.market_cap,
+                                updated_at=CURRENT_TIMESTAMP
+                            RETURNING id;
+                        """
+
+                        params = (
+                            symbol,
+                            earnings_call_time,
+                            YahooFinance._validate_string(row.event_name),
+                            YahooFinance._validate_string(row.time_type),
+                            YahooFinance._validate_numeric(row.eps_estimate),
+                            YahooFinance._validate_numeric(row.eps_actual),
+                            YahooFinance._validate_numeric(row.eps_surprise_percent),
+                            market_cap,
+                        )
+
+                        row = cursor.execute(sql, params).fetchone()
+                        if row is not None:
+                            written_ids.append(int(row[0]))
+                        successful_inserts += 1
+
+                    except Exception as e:
+                        failed_inserts += 1
+                        logger.error(f"Failed to process row for symbol {row.ticker}: {e}")
+                        continue
+
+                # Commit the batch transaction
+                conn.commit()
+                logger.debug(f"Processed batch {start_idx//batch_size + 1}: {len(batch_ee)} rows, {successful_inserts} successful, {failed_inserts} failed")
+
+            except sqlite3.Error as e:
+                # Rollback on database errors
+                conn.rollback()
+                failed_inserts += len(batch_ee)
+                logger.error(f"Database error in batch {start_idx//batch_size + 1}, rolling back: {e}")
+
+                # Retry logic for database errors
+                if max_retries > 0:
+                    logger.info(f"Retrying batch {start_idx//batch_size + 1} ({max_retries} retries remaining)")
+                    time.sleep(0.1)  # Brief pause before retry
+                    return YahooFinance.save_earnings_data_to_db(batch_ee, conn, max_retries - 1)
+
+        logger.debug(f"Database save operation completed: {successful_inserts} successful, {failed_inserts} failed")
+        if successful_inserts > 0:
+            logger.debug(f"Successfully saved {successful_inserts} earnings reports to the database.")
+        if failed_inserts > 0:
+            logger.error(f"Failed to save {failed_inserts} earnings reports due to data issues.")
+        
+        return written_ids
+    
+    # ---------------------------------------------------------------------------
+    # Data validation helpers
+    # ---------------------------------------------------------------------------
+
+    @staticmethod
+    def _validate_ticker(ticker: str) -> str | None:
+        if not ticker or len(ticker) > 10:  # Reasonable ticker length limit
+            return None
+
+        # Remove any potentially problematic characters
+        ticker_clean = ''.join(c for c in ticker if c.isalnum() or c in '.-')
+        return ticker_clean.upper() if ticker_clean else None
+
+
+    @staticmethod
+    def _validate_company_name(name: Any) -> str | None:
+        """Validate and clean company name."""
+        if pd.isna(name) or not name:
+            return None
+
+        name_str = str(name).strip()
+        if not name_str or len(name_str) > 200:  # Reasonable name length limit
+            return None
+
+        return name_str
+
+    @staticmethod
+    def _validate_datetime(dt: Any) -> str | None:
+        """Validate and format datetime for database storage."""
+        if pd.isna(dt):
+            return None
+
+        try:
+            if isinstance(dt, (pd.Timestamp, datetime)):
+                return dt.isoformat()
+            elif isinstance(dt, str):
+                # Parse string datetime
+                parsed_dt = pd.to_datetime(dt, utc=True, errors="coerce")
+                if pd.notna(parsed_dt):
+                    return parsed_dt.isoformat()
+        except Exception:
+            pass
+
+        return None
+
+
+    @staticmethod
+    def _validate_numeric(value: Any) -> float | None:
+        """Validate and convert to numeric value."""
+        if pd.isna(value):
+            return None
+
+        try:
+            numeric_val = float(value)
+            # Check for reasonable bounds to filter out garbage data
+            if abs(numeric_val) > 1e12:  # Too large, likely garbage
+                return None
+            return numeric_val
+        except (ValueError, TypeError):
+            return None
+
+
+    @staticmethod
+    def _validate_string(value: Any) -> str | None:
+        """Validate and clean string value."""
+        if pd.isna(value):
+            return None
+
+        value_str = str(value).strip()
+        if not value_str or len(value_str) > 500:  # Reasonable string length limit
+            return None
+
+        return value_str
