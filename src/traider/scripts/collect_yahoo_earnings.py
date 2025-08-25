@@ -18,8 +18,8 @@ def collect_yahoo_earnings_and_save_to_db(start_date: date, end_date: date, db_c
         if (
             earning.eps_estimate is not None
             and not math.isnan(earning.eps_estimate)
-            and earning.eps_actual is not None
-            and not math.isnan(earning.eps_actual)
+            # and earning.eps_actual is not None
+            # and not math.isnan(earning.eps_actual)
         )
     ]
 

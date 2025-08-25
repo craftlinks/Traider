@@ -102,6 +102,18 @@ class EarningsEvent:
         )
 
 # ---------------------------------------------------------------------------
+# Press release structure
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class PressRelease:
+    title: str
+    pub_date: str | None
+    display_time: str | None
+    url: str
+
+# ---------------------------------------------------------------------------
 # YahooFinance class
 # ---------------------------------------------------------------------------
 
@@ -617,3 +629,266 @@ class YahooFinance:
             return None
 
         return value_str
+
+
+    def get_press_releases(self, ticker: str) -> Optional[PressRelease]:
+        """Return a list of press-release article URLs for *ticker*.
+
+        This method leverages the undocumented Yahoo Finance *NCP* endpoint that is
+        used by the quote page news tab.  The endpoint is fairly tolerant – it
+        only needs the correct *listName* query parameter and a minimal JSON
+        body.  We therefore:
+
+        1.  Build the request URL of the form::
+
+                https://finance.yahoo.com/xhr/ncp?location=US&queryRef=pressRelease&serviceKey=ncp_fin&listName={ticker}-press-releases&lang=en-US&region=US
+
+        2.  Send a POST request with a *serviceConfig* payload similar to what
+           the browser sends.  Most of the original payload (consent state,
+           feature flags …) is irrelevant for server-side scraping, so we trim
+           it down to the bare minimum: *count* (=max items) and *s* (the
+           symbol list).
+
+        3.  Extract all URLs from the JSON response in a best-effort manner – in
+           practice the URLs live under
+           ``response["data"]["main"]["stream_items"][*]["clickThroughUrl"]["url"]``
+           but the structure is not guaranteed to stay the same.  A small
+           recursive helper therefore walks the tree and collects every value
+           that *looks* like a URL.
+
+        Parameters
+        ----------
+        ticker:
+            The stock symbol (case-insensitive).  Yahoo expects an upper-case
+            ticker in the *listName* – we convert it for safety.
+
+        Returns
+        -------
+        list[str]
+            A deduplicated list of press-release URLs (may be empty if Yahoo
+            returns no items or an error occurs).
+        """
+
+        def _extract_urls(node: Any) -> list[str]:  # noqa: ANN401 – dynamic JSON structure
+            """Recursively collect URL-looking strings from *node*."""
+
+            urls: list[str] = []
+
+            if isinstance(node, dict):
+                for v in node.values():
+                    urls.extend(_extract_urls(v))
+            elif isinstance(node, list):
+                for item in node:
+                    urls.extend(_extract_urls(item))
+            elif isinstance(node, str):
+                if node.startswith("http://") or node.startswith("https://"):
+                    urls.append(node)
+
+            return urls
+
+        base_url = "https://finance.yahoo.com/xhr/ncp"
+
+        params = {
+            "location": "US",
+            "queryRef": "pressRelease",
+            "serviceKey": "ncp_fin",
+            "listName": f"{ticker.upper()}-press-releases",
+            "lang": "en-US",
+            "region": "US",
+        }
+
+        payload = {
+            "serviceConfig": {
+                "count": 250,
+                "spaceId": "95993639",
+                # The endpoint expects a list of tickers in *s*
+                "s": [ticker.upper()],
+            }
+        }
+
+        headers = {
+            "User-Agent": _USER_AGENT,
+            "Accept": "application/json, text/javascript, */*; q=0.01",
+            "Content-Type": "application/json;charset=UTF-8",
+            "Origin": "https://finance.yahoo.com",
+            "Referer": f"https://finance.yahoo.com/quote/{ticker}/press-releases/",
+        }
+
+        latest_pr: Optional[PressRelease] = None
+
+        # A couple of retry attempts in case the cookie/crumb expired in between
+        for attempt in range(2):
+            try:
+                resp = self.session.post(
+                    base_url,
+                    params=params,
+                    json=payload,
+                    headers=headers,
+                    cookies={self.cookie.name: str(self.cookie.value)} if getattr(self, "cookie", None) else None,  # type: ignore[arg-type]
+                    timeout=20,
+                )
+                resp.raise_for_status()
+
+                data = resp.json()
+
+                # Navigate to stream items
+                stream_items = (
+                    data.get("data", {})
+                    .get("tickerStream", {})
+                    .get("stream", [])
+                )
+
+                if stream_items:
+                    # Assume the list is already ordered by recency (Yahoo returns newest first)
+                    item0 = stream_items[0]
+                    content = item0.get("content", {})
+
+                    title = str(content.get("title", "")).strip()
+                    pub_date = content.get("pubDate")
+                    display_time = content.get("displayTime")
+
+                    # Prefer canonicalUrl, fall back to clickThroughUrl
+                    url_dict = content.get("canonicalUrl") or content.get("clickThroughUrl") or {}
+                    url_val = url_dict.get("url") if isinstance(url_dict, dict) else None
+
+                    if url_val:
+                        latest_pr = PressRelease(
+                            title=title,
+                            pub_date=pub_date,
+                            display_time=display_time,
+                            url=url_val,
+                        )
+
+                break  # success – exit retry loop
+            except requests.RequestException as exc:
+                logger.warning("Failed to fetch press releases for %s (attempt %d): %s", ticker, attempt + 1, exc)
+                if attempt == 0:
+                    # On first failure attempt to refresh the crumb & cookie – then retry once
+                    try:
+                        self._refresh_cookie_and_crumb()
+                    except Exception as refresh_exc:  # pragma: no-cover – defensive
+                        logger.error("Failed to refresh Yahoo crumb: %s", refresh_exc)
+                        break
+                else:
+                    break
+            except ValueError as parse_exc:  # JSON decoding
+                logger.error("Invalid JSON received while fetching press releases for %s: %s", ticker, parse_exc)
+                break
+
+        if latest_pr is None:
+            logger.debug("No press release found for %s", ticker)
+
+        return latest_pr
+
+
+    def get_press_release_content(self, url: str) -> str:
+        """Return the raw HTML string of the article body for a Yahoo press-release URL.
+
+        Yahoo Finance does not expose a dedicated JSON/REST endpoint for press-
+        release content.  Empirically, the human-readable HTML version embeds the
+        full article inside a *div* with a fairly stable class name:
+
+            <div class="atoms-wrapper">…article markup…</div>
+
+        The outer DOM hierarchy (``#main-content-wrapper …``) tends to change
+        between articles and over time, but the ``atoms-wrapper`` container has
+        stayed consistent in dozens of samples.  We therefore:
+
+        1.  Issue a simple *GET* request with the existing session/cookie/UA.
+        2.  Parse the response with *BeautifulSoup* (``html.parser`` to avoid
+            external dependencies).
+        3.  Locate the first ``div`` with class *atoms-wrapper*.
+        4.  Return its *inner HTML* (children serialized) **or** – as a
+            fallback – the full response body when the wrapper cannot be found.
+
+        Parameters
+        ----------
+        url:
+            Canonical Yahoo Finance press-release URL obtained from
+            :py:meth:`get_press_releases`.
+
+        Returns
+        -------
+        str
+            Raw HTML of the article body.  Empty string on error/network issues.
+        """
+
+        headers = {
+            "User-Agent": _USER_AGENT,
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+            "Referer": "https://finance.yahoo.com/",
+        }
+
+        try:
+            resp = self.session.get(
+                url,
+                headers=headers,
+                cookies={self.cookie.name: str(self.cookie.value)} if getattr(self, "cookie", None) else None,  # type: ignore[arg-type]
+                timeout=20,
+            )
+            resp.raise_for_status()
+
+            html_text = resp.text
+
+            # ------------------------------------------------------------------
+            # Detect EU consent interstitial (guce.yahoo.com). When present the
+            # real article URL is embedded in a hidden input named
+            # "originalDoneUrl".  We extract the value and re-fetch once.
+            # ------------------------------------------------------------------
+            if "id=\"consent-page\"" in html_text and "originalDoneUrl" in html_text:
+                try:
+                    from bs4 import BeautifulSoup
+                    soup_consent = BeautifulSoup(html_text, "html.parser")
+                    inp = soup_consent.find("input", attrs={"name": "originalDoneUrl"})
+                    if inp is not None:
+                        val = inp.get("value")  # type: ignore[attr-defined]
+                        if not val:
+                            raise ValueError("Missing value attribute")
+
+                        import html
+
+                        real_url = html.unescape(str(val))
+                        logger.info("Detected consent page – retrying with original URL: %s", real_url)
+                        # Recursive single retry to avoid infinite loops
+                        return self.get_press_release_content(real_url)
+                except Exception as consent_exc:  # pragma: no cover
+                    logger.debug("Failed to bypass consent page for %s: %s", url, consent_exc)
+
+            # --- Extract the article body – best effort ----------------------------------
+            try:
+                from bs4 import BeautifulSoup  # Imported lazily to avoid hard dependency at module import time
+
+                soup = BeautifulSoup(html_text, "html.parser")
+
+                atoms_div = soup.find("div", class_="atoms-wrapper")
+                if atoms_div is not None:
+                    # Return children as HTML string *without* the wrapper div itself
+                    return "".join(str(child) for child in atoms_div.contents)  # type: ignore[attr-defined]
+
+                # ------------------------------------------------------------------
+                # Fallback 2: Yahoo sometimes delivers the article as JSON inside a
+                # <script id="caas-art-…" type="application/json"> tag.  The JSON
+                # payload contains a top-level "content" field holding raw HTML.
+                # ------------------------------------------------------------------
+                script_tag = soup.find("script", id=lambda v: isinstance(v, str) and v.startswith("caas-art-"), attrs={"type": "application/json"})
+                if script_tag is not None and getattr(script_tag, "string", None):  # type: ignore[attr-defined]
+                    import json
+
+                    try:
+                        data = json.loads(script_tag.string)  # type: ignore[attr-defined]
+                        if isinstance(data, dict):
+                            content_html = data.get("content")
+                            if isinstance(content_html, str) and content_html.strip():
+                                logger.info("Successfully extracted article body from caas-art JSON for %s", url)
+                                return content_html
+                    except json.JSONDecodeError as json_exc:  # pragma: no cover – defensive
+                        logger.debug("Failed to decode caas-art JSON for %s: %s", url, json_exc)
+
+            except Exception as parse_exc:  # pragma: no cover – defensive, log & fallback
+                logger.debug("Failed to parse atoms-wrapper for %s: %s", url, parse_exc)
+
+            # Fallback: return the full page – the caller may handle further parsing
+            return html_text
+        except requests.RequestException as exc:
+            logger.error("Failed to fetch press-release content from %s: %s", url, exc)
+            return ""

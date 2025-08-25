@@ -1,0 +1,1 @@
+from traider.platforms.yahoo.main import YahooFinance
