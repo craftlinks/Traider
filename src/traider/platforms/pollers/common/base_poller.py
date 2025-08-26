@@ -202,8 +202,8 @@ class BasePoller(ABC):
 
     def print_startup_info(self) -> None:
         """Log startup information."""
-        logger.info("Starting %s Poller...", self.get_poller_name())
-        logger.info(
+        logger.debug("Starting %s Poller...", self.get_poller_name())
+        logger.debug(
             "Polling interval: %ds | User-Agent: %s | Min request interval: %.3fs | Jitter: ±%d%%",
             self.config.polling_interval_seconds,
             self.config.user_agent,

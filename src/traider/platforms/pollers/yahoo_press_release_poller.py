@@ -47,7 +47,6 @@ class YahooPressReleasePoller(BasePoller):
         asyncio.run(self.async_polling_loop())
 
     async def async_polling_loop(self) -> None:
-        self.print_startup_info()
 
         # Continuously iterate over tickers, respecting the interval *between* individual requests
         while True:
