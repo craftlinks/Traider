@@ -2,11 +2,14 @@ import asyncio
 from datetime import date, datetime
 import argparse
 
-from dotenv.main import logger
+import logging
 
 from src.traider.platforms.yahoo.main import EarningsEvent
 from traider.interfaces.queue_sink import AsyncQueueSink
 from traider.platforms.pollers.yahoo_earnings_poller import YahooEarningsPoller
+
+logger = logging.getLogger(__name__)
+logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
 
 
 def parse_args() -> argparse.Namespace:
@@ -29,18 +32,13 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--interval",
         type=int,
-        help="Interval in seconds to poll for earnings (default: 1 minute).",
+        help="Interval in hours to poll for earnings (default: 1 hour).",
     )
     return parser.parse_args()
 
 
 # Use an asynchronous queue to avoid blocking the event-loop.
 earnings_queue: asyncio.Queue[EarningsEvent] = asyncio.Queue(maxsize=1000)
-
-
-# ---------------------------------------------------------------------------
-# Use reusable AsyncQueueSink
-# ---------------------------------------------------------------------------
 
 sink = AsyncQueueSink(earnings_queue)
 

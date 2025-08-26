@@ -130,6 +130,50 @@ def create_tables(conn: Optional[sqlite3.Connection] = None) -> None:  # noqa: D
         "CREATE INDEX IF NOT EXISTS idx_earnings_ticker_datetime ON earnings_reports (company_ticker, report_datetime DESC);"
     )
 
+    # --- Press Releases Table ---
+    cursor.execute(
+        """
+        CREATE TABLE IF NOT EXISTS press_releases (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            company_ticker TEXT NOT NULL,
+            title TEXT NOT NULL,
+            url TEXT NOT NULL UNIQUE,
+            type TEXT,
+            pub_date TEXT,
+            display_time TEXT,
+            company_name TEXT,
+            raw_html TEXT,
+            text_content TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (company_ticker) REFERENCES companies (ticker) ON DELETE CASCADE
+        );
+        """
+    )
+
+    # Trigger to auto-update the 'updated_at' timestamp whenever a press release row changes
+    cursor.execute(
+        """
+        CREATE TRIGGER IF NOT EXISTS update_press_releases_updated_at
+        AFTER UPDATE ON press_releases
+        FOR EACH ROW
+        BEGIN
+            UPDATE press_releases
+            SET updated_at = CURRENT_TIMESTAMP
+            WHERE id = OLD.id;
+        END;
+        """
+    )
+
+    # Index for quicker look-ups of press releases by company and date (descending)
+    cursor.execute("DROP INDEX IF EXISTS idx_press_releases_ticker_date;")
+    cursor.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_press_releases_ticker_date
+        ON press_releases (company_ticker, pub_date DESC);
+        """
+    )
+
     conn.commit()
     logger.info("Database tables created or verified successfully at %s", DATABASE_FILE)
 

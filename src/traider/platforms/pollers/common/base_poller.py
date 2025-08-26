@@ -17,6 +17,7 @@ from requests import Response, Session
 from .poller_utils import build_session, filter_new_items
 from traider.platforms.cache import get_shared_cache
 import pandas as pd
+from traider.interfaces.cache import CacheInterface
 
 # Use find_dotenv to locate the nearest .env starting from the CWD and moving up
 # This is more reliable when poller modules live in nested sub-packages but are
@@ -85,14 +86,29 @@ class BasePoller(ABC):
     """Abstract base class for all pollers implementing the template method pattern."""
     
     def __init__(
-        self, 
-        config: PollerConfig, 
+        self,
+        config: PollerConfig,
+        *,
+        cache: CacheInterface | None = None,
         use_cloudscraper: bool = False,
-        extra_headers: dict | None = None
+        extra_headers: dict | None = None,
     ):
+        """BasePoller constructor.
+
+        Parameters
+        ----------
+        config:
+            Poller runtime configuration.
+        cache:
+            Optional dedicated cache instance.  When *None*, falls back to the
+            process-wide :pyfunc:`traider.platforms.cache.get_shared_cache`.
+        use_cloudscraper / extra_headers:
+            Passed straight to :pyfunc:`build_session`.
+        """
+
         self.config = config
-        # Shared persistent cache for duplicate detection
-        self.cache = get_shared_cache()
+        # Per-poller cache (defaults to global shared cache)
+        self.cache = cache if cache is not None else get_shared_cache()
         self.session = build_session(
             config.user_agent, 
             config.min_request_interval_sec, 

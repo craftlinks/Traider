@@ -8,6 +8,7 @@ from urllib.parse import quote_plus
 
 import pandas as pd
 import requests
+from traider.db.database import get_db_connection
 from traider.platforms.yahoo.helpers import extract_earnings_data_json, extract_profile_data_html, extract_profile_data_json
 import math
 
@@ -108,10 +109,15 @@ class EarningsEvent:
 
 @dataclass
 class PressRelease:
+    ticker: str
     title: str
-    pub_date: str | None
-    display_time: str | None
     url: str
+    type: str
+    pub_date: Optional[str] = None
+    display_time: Optional[str] = None
+    company_name: Optional[str] = None
+    raw_html: Optional[str] = None
+    text_content: Optional[str] = None
 
 # ---------------------------------------------------------------------------
 # YahooFinance class
@@ -631,7 +637,7 @@ class YahooFinance:
         return value_str
 
 
-    def get_press_releases(self, ticker: str) -> Optional[PressRelease]:
+    def get_press_releases(self, ticker: str, type: str) -> Optional[PressRelease]:
         """Return a list of press-release article URLs for *ticker*.
 
         This method leverages the undocumented Yahoo Finance *NCP* endpoint that is
@@ -753,10 +759,12 @@ class YahooFinance:
 
                     if url_val:
                         latest_pr = PressRelease(
+                            ticker=ticker,
                             title=title,
                             pub_date=pub_date,
                             display_time=display_time,
                             url=url_val,
+                            type=type,
                         )
 
                 break  # success – exit retry loop
@@ -848,7 +856,7 @@ class YahooFinance:
                         import html
 
                         real_url = html.unescape(str(val))
-                        logger.info("Detected consent page – retrying with original URL: %s", real_url)
+                        logger.debug("Detected consent page – retrying with original URL: %s", real_url)
                         # Recursive single retry to avoid infinite loops
                         return self.get_press_release_content(real_url)
                 except Exception as consent_exc:  # pragma: no cover
@@ -892,3 +900,68 @@ class YahooFinance:
         except requests.RequestException as exc:
             logger.error("Failed to fetch press-release content from %s: %s", url, exc)
             return ""
+
+
+    def save_press_release_to_db(self, pr: PressRelease) -> int | None:
+        """Insert *pr* into ``press_releases`` table.
+
+        Returns the auto-incremented row ID when a *new* record is inserted, or
+        *None* if the URL already existed.  Any database exception bubbles up to
+        the caller.
+        """
+
+        with get_db_connection() as conn:
+
+            cursor = conn.cursor()
+
+            # Use an UPSERT so that existing rows (matched by the UNIQUE url column)
+            # are updated with the latest data rather than ignored.  We update every
+            # column except the primary key and the automatically managed
+            # timestamps, letting the `updated_at` trigger capture the modification
+            # time.
+
+            sql = (
+                "INSERT INTO press_releases (company_ticker, title, url, type, pub_date, display_time, "
+                "company_name, raw_html, text_content) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) "
+                "ON CONFLICT(url) DO UPDATE SET "
+                "company_ticker = excluded.company_ticker, "
+                "title          = excluded.title, "
+                "type           = excluded.type, "
+                "pub_date       = excluded.pub_date, "
+                "display_time   = excluded.display_time, "
+                "company_name   = excluded.company_name, "
+                "raw_html       = excluded.raw_html, "
+                "text_content   = excluded.text_content;"
+            )
+
+            params = (
+                pr.ticker.upper(),
+                pr.title,
+                pr.url,
+                pr.type,
+                pr.pub_date,
+                pr.display_time,
+                pr.company_name,
+                pr.raw_html,
+                pr.text_content,
+            )
+
+            cursor.execute(sql, params)
+
+            # Retrieve the row id of the affected record (inserted *or* updated)
+            # The built-in SQLite function last_insert_rowid() returns the rowid
+            # of the most recent successful INSERT.  If an UPDATE occurred we need
+            # to look up the id by URL instead.
+
+            row_id: int | None
+            if cursor.lastrowid != 0:
+                row_id = cursor.lastrowid
+            else:
+                cursor.execute("SELECT id FROM press_releases WHERE url = ?;", (pr.url,))
+                fetched = cursor.fetchone()
+                row_id = int(fetched[0]) if fetched is not None else None
+
+            conn.commit()
+
+            return row_id

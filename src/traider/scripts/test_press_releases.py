@@ -24,7 +24,7 @@ def main() -> None:
 
     ticker = args.ticker.upper()
     yf = YahooFinance()
-    pr: PressRelease | None = yf.get_press_releases(ticker)
+    pr: PressRelease | None = yf.get_press_releases(ticker, type="press_release")
 
     if pr is None:
         logger.info("No press release returned for %s", ticker)

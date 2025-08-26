@@ -2,7 +2,7 @@ from __future__ import annotations
 from datetime import datetime
 import math
 
-from traider.platforms.cache import get_shared_cache
+# from traider.platforms.cache import get_shared_cache
 from traider.platforms.pollers.common.base_poller import BaseItem, BasePoller, PollerConfig
 
 """Utility for fetching Yahoo Finance earnings calendar data in an *authenticated* way
@@ -59,7 +59,7 @@ class YahooEarningsPoller(BasePoller):
       self.today = date
       self.yf = YahooFinance()
       self.db_conn = get_db_connection()
-      self.cache = get_shared_cache()
+      # self.cache = get_shared_cache()
       self.interval = interval if interval > 0 else config.polling_interval_seconds
 
    def get_poller_name(self) -> str:
@@ -129,13 +129,11 @@ class YahooEarningsPoller(BasePoller):
             except Exception as sink_exc:
                logger.exception("[SINK] Error while emitting item: %s", sink_exc)
       
-
-   def parse_items(self, data: Response | Dict[str, Any] | pd.DataFrame) -> List[BaseItem]:
+   def parse_items(self, data: Any) -> List[BaseItem]: # type: ignore[override]
       raise NotImplementedError("YahooEarningsCalendarPoller does not support parsing items")
 
-   def extract_article_text(self, item: BaseItem) -> str | None:
+   def extract_article_text(self, item: BaseItem) -> str | None: # type: ignore[override]
       raise NotImplementedError("YahooEarningsCalendarPoller does not support extracting article text")
-
 
 def run_poller():
 
