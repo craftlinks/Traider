@@ -29,7 +29,7 @@ class Poller(Protocol[ItemT]):
         """
         ...
 
-    def run(self) -> None:
+    async def run(self) -> None:
         """
         Start the poller's main execution loop.
 

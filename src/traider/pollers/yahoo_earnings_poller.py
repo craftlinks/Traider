@@ -37,7 +37,7 @@ class YahooEarningsPoller(Poller[yf.EarningsEvent]):
     """
 
     # Make __init__ private to enforce creation via the async factory
-    def __init__(self, config: PollerConfig, db_conn: Any, cache: CacheInterface, poll_date: date):
+    def __init__(self, config: PollerConfig, db_conn: Any, cache: CacheInterface, poll_date: date, sink: SinkCallable | None = None):
         self.config = config
         self.db_conn = db_conn
         self.cache = cache
@@ -46,7 +46,7 @@ class YahooEarningsPoller(Poller[yf.EarningsEvent]):
         self._shutdown_event = asyncio.Event()
 
     @classmethod
-    async def create(cls, poll_date: date = date.today(), interval: int = 60) -> "YahooEarningsPoller":
+    async def create(cls, poll_date: date = date.today(), interval: int = 60, sink: SinkCallable | None = None) -> "YahooEarningsPoller":
         """
         Asynchronously create and initialize a YahooEarningsPoller instance.
         This is the preferred way to instantiate the class.
@@ -60,7 +60,7 @@ class YahooEarningsPoller(Poller[yf.EarningsEvent]):
         cache = get_named_cache("yahoo_earnings_calendar")
         
         logger.info("YahooEarningsPoller initialized.")
-        return cls(config, db_conn, cache, poll_date)
+        return cls(config, db_conn, cache, poll_date, sink)
 
     @property
     def name(self) -> str:
