@@ -1,4 +1,4 @@
-import requests
+import httpx
 from typing import Any, Optional
 import pandas as pd
 import logging
@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 # Module level mutable state – *private*
 # ---------------------------------------------------------------------------
-_session: Optional[requests.Session] = None
+_session: Optional[httpx.AsyncClient] = None
 _crumb: Optional[str] = None
 _cookie: Optional[Any] = None  # "Any" because requests.cookies.Cookie is private
 
@@ -32,46 +32,47 @@ def _to_float(val: Any) -> float:
     except (TypeError, ValueError):
         return float("nan")
 
-def _initialize_session() -> None:
+async def _initialize_session() -> None:
     """Internal logic for creating the session and fetching the crumb."""
     global _session, _crumb, _cookie
     if _session is not None:
         return  # idempotent
 
-    _session = requests.Session()
+    _session = httpx.AsyncClient()
     _session.headers.update({"User-Agent": _USER_AGENT})
 
-    cookie, crumb = _fetch_cookie_and_crumb(_session)
+    cookie, crumb = await _fetch_cookie_and_crumb(_session)
     if cookie and crumb:
         _cookie, _crumb = cookie, crumb
         logger.info("Successfully obtained Yahoo crumb: %s", crumb)
     else:
+        await _session.aclose()
         _session = None  # reset so callers can retry
         raise RuntimeError("Unable to obtain Yahoo crumb token.")
 
-def _get_session() -> requests.Session:
+async def _get_session() -> httpx.AsyncClient:
     if _session is None:
         logger.debug("Lazy-initialising Yahoo Finance session …")
-        _initialize_session()
+        await _initialize_session()
     return _session  # type: ignore[return-value]
 
 # ---------------------------------------------------------------------------
 # Private helpers – cookie / crumb handling
 # ---------------------------------------------------------------------------
 
-def _fetch_cookie_and_crumb(session: requests.Session, *, timeout: int = 30) -> tuple[Any | None, str | None]:
+async def _fetch_cookie_and_crumb(session: httpx.AsyncClient, *, timeout: int = 30) -> tuple[Any | None, str | None]:
     """Retrieve Yahoo's **A3** cookie + crumb anti-CSRF token."""
     headers = {"User-Agent": _USER_AGENT}
     try:
-        resp = session.get("https://fc.yahoo.com", headers=headers, timeout=timeout, allow_redirects=True)
+        resp = await session.get("https://fc.yahoo.com", headers=headers, timeout=timeout, follow_redirects=True)
         if not resp.cookies:
             return None, None
 
-        cookie = next(iter(resp.cookies), None)
+        cookie = next(iter(resp.cookies.jar), None)
         if cookie is None:
             return None, None
 
-        crumb_resp = session.get(
+        crumb_resp = await session.get(
             "https://query1.finance.yahoo.com/v1/test/getcrumb",
             headers=headers,
             cookies={cookie.name: str(cookie.value)},
@@ -85,12 +86,12 @@ def _fetch_cookie_and_crumb(session: requests.Session, *, timeout: int = 30) -> 
         return None, None
 
 
-def _refresh_cookie_and_crumb() -> None:
+async def _refresh_cookie_and_crumb() -> None:
     global _cookie, _crumb, _session
     if _session is None:
         raise RuntimeError("Session not initialised – call initialize() first.")
 
-    cookie, crumb = _fetch_cookie_and_crumb(_session)
+    cookie, crumb = await _fetch_cookie_and_crumb(_session)
     if cookie and crumb:
         _cookie, _crumb = cookie, crumb
         logger.info("Successfully refreshed Yahoo crumb: %s", crumb)

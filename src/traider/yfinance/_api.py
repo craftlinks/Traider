@@ -7,9 +7,10 @@ import logging
 import time
 from typing import List
 from urllib.parse import quote_plus
+import asyncio
 
 import pandas as pd
-import requests
+import httpx
 from bs4 import BeautifulSoup
 
 from ._constants import _USER_AGENT, _YF_PROFILE_TEMPLATE, _YF_PROFILE_JSON_TEMPLATE, YF_VISUALIZATION_API, _REQUEST_DELAY_S
@@ -28,8 +29,8 @@ logger.addHandler(logging.NullHandler())
 # Initialisation & session access helpers
 # ---------------------------------------------------------------------------
 
-def initialize() -> None:
-    _initialize_session()
+async def initialize() -> None:
+    await _initialize_session()
 
 
 # ---------------------------------------------------------------------------
@@ -37,7 +38,7 @@ def initialize() -> None:
 # ---------------------------------------------------------------------------
 
 
-def get_profile(ticker: str, *, from_json: bool = False) -> Profile:
+async def get_profile(ticker: str, *, from_json: bool = False) -> Profile:
     """Return (website, sector, industry) for *ticker*.
 
     Two independent Yahoo endpoints are supported:
@@ -49,7 +50,8 @@ def get_profile(ticker: str, *, from_json: bool = False) -> Profile:
     max_attempts = 2
     for attempt in range(max_attempts):
         try:
-            resp = _get_session().get(url, timeout=20)
+            session = await _get_session()
+            resp = await session.get(url, timeout=20)
             resp.raise_for_status()
 
             if from_json:
@@ -57,11 +59,11 @@ def get_profile(ticker: str, *, from_json: bool = False) -> Profile:
             else:
                 website, sector, industry = _extract_profile_data_html(resp.text)
             return Profile(website, sector, industry)
-        except requests.RequestException as exc:
+        except httpx.RequestError as exc:
             if attempt < max_attempts - 1:
                 logger.debug("Failed to fetch profile for %s (%d/%d): %s – retrying …", ticker, attempt + 1, max_attempts, exc)
                 try:
-                    _refresh_cookie_and_crumb()
+                    await _refresh_cookie_and_crumb()
                 except RuntimeError:
                     break
             else:
@@ -72,14 +74,14 @@ def get_profile(ticker: str, *, from_json: bool = False) -> Profile:
 # Public API – earnings
 # ---------------------------------------------------------------------------
 
-def get_earnings(start_date: date, *, as_dataframe: bool = True, max_retries: int = 3) -> pd.DataFrame | List[EarningsEvent]:
+async def get_earnings(start_date: date, *, as_dataframe: bool = True, max_retries: int = 3) -> pd.DataFrame | List[EarningsEvent]:
     date_str = start_date.strftime("%Y-%m-%d")
     logger.debug("Fetching earnings for %s", date_str)
 
     for attempt in range(max_retries + 1):
         try:
             if attempt > 0:
-                time.sleep(2 ** attempt)
+                await asyncio.sleep(2 ** attempt)
                 logger.debug("Retry %d/%d for %s", attempt, max_retries, date_str)
 
             api_url = YF_VISUALIZATION_API.format(crumb=quote_plus(_crumb))  # type: ignore[arg-type]
@@ -117,7 +119,8 @@ def get_earnings(start_date: date, *, as_dataframe: bool = True, max_retries: in
                     ],
                 },
             }
-            resp = _get_session().post(
+            session = await _get_session()
+            resp = await session.post(
                 api_url,
                 json=payload,
                 timeout=30,
@@ -127,14 +130,14 @@ def get_earnings(start_date: date, *, as_dataframe: bool = True, max_retries: in
             resp.raise_for_status()
             df = _extract_earnings_data_json(resp.json())
             return df if as_dataframe else _df_to_events(df)
-        except requests.RequestException as exc:
+        except httpx.RequestError as exc:
             logger.error("Network error contacting Yahoo (%d/%d): %s", attempt + 1, max_retries, exc)
         except Exception as exc:  # pragma: no cover – parse errors, etc.
             logger.error("Unhandled error parsing Yahoo response (%d/%d): %s", attempt + 1, max_retries, exc)
 
         if attempt < max_retries:
             try:
-                _refresh_cookie_and_crumb()
+                await _refresh_cookie_and_crumb()
             except RuntimeError as refresh_exc:
                 logger.error("Failed to refresh Yahoo crumb – aborting: %s", refresh_exc)
                 break
@@ -144,19 +147,19 @@ def get_earnings(start_date: date, *, as_dataframe: bool = True, max_retries: in
 
 # Convenience wrapper for multiple days ---------------------------------------------------
 
-def get_earnings_for_date_range(start_date: date, end_date: date, *, as_dataframe: bool = False) -> pd.DataFrame | List[EarningsEvent]:
+async def get_earnings_for_date_range(start_date: date, end_date: date, *, as_dataframe: bool = False) -> pd.DataFrame | List[EarningsEvent]:
     date_range = [start_date + timedelta(days=i) for i in range((end_date - start_date).days + 1)]
 
     dfs: list[pd.DataFrame] = []
     events: list[EarningsEvent] = []
 
     for day in date_range:
-        res = get_earnings(day, as_dataframe=as_dataframe)
+        res = await get_earnings(day, as_dataframe=as_dataframe)
         if as_dataframe and isinstance(res, pd.DataFrame) and not res.empty:
             dfs.append(res)
         elif not as_dataframe and isinstance(res, list):
             events.extend(res)
-        time.sleep(_REQUEST_DELAY_S)
+        await asyncio.sleep(_REQUEST_DELAY_S)
 
     return (pd.concat(dfs, ignore_index=True) if as_dataframe else events)  # type: ignore[return-value,arg-type]
 
@@ -164,7 +167,7 @@ def get_earnings_for_date_range(start_date: date, end_date: date, *, as_datafram
 # Public API – press releases
 # ---------------------------------------------------------------------------
 
-def get_press_releases(ticker: str, *, type: str, limit: int = 250) -> list[PressRelease]:  # noqa: A002 – type parameter is Yahoo nomenclature
+async def get_press_releases(ticker: str, *, type: str, limit: int = 250) -> list[PressRelease]:  # noqa: A002 – type parameter is Yahoo nomenclature
     """Return up to *limit* press releases for *ticker*.
 
     The Yahoo Finance *NCP* endpoint does not offer traditional pagination.  The
@@ -193,7 +196,8 @@ def get_press_releases(ticker: str, *, type: str, limit: int = 250) -> list[Pres
     releases: list[PressRelease] = []
     for attempt in range(2):
         try:
-            resp = _get_session().post(
+            session = await _get_session()
+            resp = await session.post(
                 base_url,
                 params=params,
                 json=payload,
@@ -222,11 +226,11 @@ def get_press_releases(ticker: str, *, type: str, limit: int = 250) -> list[Pres
                     )
                 )
             break  # success – leave retry loop
-        except requests.RequestException as exc:
+        except httpx.RequestError as exc:
             logger.debug("Failed to fetch press releases for %s (%d): %s", ticker, attempt + 1, exc)
             if attempt == 0:
                 try:
-                    _refresh_cookie_and_crumb()
+                    await _refresh_cookie_and_crumb()
                 except Exception as refresh_exc:  # pragma: no cover
                     logger.error("Failed to refresh Yahoo crumb: %s", refresh_exc)
                     break
@@ -241,7 +245,7 @@ def get_press_releases(ticker: str, *, type: str, limit: int = 250) -> list[Pres
 # ---------------------------------------------------------------------------
 
 
-def get_press_release_content(url: str) -> str:
+async def get_press_release_content(url: str) -> str:
     """Return the raw HTML string of the article body for a Yahoo press‐release URL.
 
     The implementation closely mirrors the original *YahooFinance.get_press_release_content*
@@ -255,7 +259,8 @@ def get_press_release_content(url: str) -> str:
     }
 
     try:
-        resp = _get_session().get(
+        session = await _get_session()
+        resp = await session.get(
             url,
             headers=headers,
             cookies={_cookie.name: str(_cookie.value)} if _cookie else None,  # type: ignore[arg-type]
@@ -281,7 +286,7 @@ def get_press_release_content(url: str) -> str:
                         real_url = _html.unescape(str(val))
                         logger.debug("Detected consent page – retrying with original URL: %s", real_url)
                         # Single recursive retry
-                        return get_press_release_content(real_url)
+                        return await get_press_release_content(real_url)
             except Exception as consent_exc:  # pragma: no cover
                 logger.debug("Failed to bypass consent page for %s: %s", url, consent_exc)
 
@@ -317,6 +322,6 @@ def get_press_release_content(url: str) -> str:
             logger.debug("Failed to parse article body for %s: %s", url, parse_exc)
 
         return html_text  # Fallback – let caller handle further parsing
-    except requests.RequestException as exc:
+    except httpx.RequestError as exc:
         logger.error("Failed to fetch press-release content from %s: %s", url, exc)
         return ""

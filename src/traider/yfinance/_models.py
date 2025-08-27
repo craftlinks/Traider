@@ -2,6 +2,7 @@ from dataclasses import dataclass
 import sqlite3
 from datetime import datetime
 import logging
+import asyncio
 
 from traider.db.database import get_db_connection
 
@@ -33,12 +34,12 @@ class Profile:
             industry=row["industry"] if "industry" in row.keys() else None,
         )
 
-    def to_db(self, *, ticker: str, conn: sqlite3.Connection | None = None) -> None:  # noqa: D401 (imperative mood)
+    async def to_db(self, *, ticker: str, conn: sqlite3.Connection | None = None) -> None:  # noqa: D401 (imperative mood)
         """Persist the profile information for *ticker* to the database."""
 
         from traider.db import crud  # Local import to avoid circular dependency
 
-        crud.save_profile(ticker=ticker, profile=self, conn=conn)
+        await asyncio.to_thread(crud.save_profile, ticker=ticker, profile=self, conn=conn)
 
 
 @dataclass(slots=True)
@@ -71,12 +72,12 @@ class EarningsEvent:
             market_cap=row["market_cap"],
         )
 
-    def to_db(self, conn: sqlite3.Connection | None = None) -> int | None:  # noqa: D401
+    async def to_db(self, conn: sqlite3.Connection | None = None) -> int | None:  # noqa: D401
         """Persist this earnings event to the ``earnings_reports`` table."""
 
         from traider.db import crud
 
-        return crud.save_earnings_event(self, conn=conn)
+        return await asyncio.to_thread(crud.save_earnings_event, self, conn=conn)
 
 
 @dataclass(slots=True)
@@ -111,9 +112,9 @@ class PressRelease:
             text_content=row["text_content"],
         )
 
-    def to_db(self, conn: sqlite3.Connection | None = None) -> int | None:  # noqa: D401
+    async def to_db(self, conn: sqlite3.Connection | None = None) -> int | None:  # noqa: D401
         """Persist this press-release to the ``press_releases`` table."""
 
         from traider.db import crud
 
-        return crud.save_press_release(self, conn=conn)
+        return await asyncio.to_thread(crud.save_press_release, self, conn=conn)
