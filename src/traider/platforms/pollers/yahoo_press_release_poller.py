@@ -57,7 +57,7 @@ class YahooPressReleasePoller(BasePoller):
                         # emit immediately – the helper expects a list
                         await self._emit_new_press_release(new_pr)
                     else:
-                        print('.', end='', flush=True)
+                        print('.', end='\n', flush=True)
                 except Exception as exc:  # noqa: BLE001
                     logger.exception("Unhandled error while processing %s: %s", ticker, exc)
 

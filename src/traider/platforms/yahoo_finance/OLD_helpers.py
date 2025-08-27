@@ -1,3 +1,5 @@
+#### DEPRECATED – use api.py instead
+
 from typing import Any, Optional, Tuple
 
 from bs4 import BeautifulSoup
