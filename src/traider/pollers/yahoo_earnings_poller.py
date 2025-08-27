@@ -72,13 +72,10 @@ class YahooEarningsPoller(Poller[yf.EarningsEvent]):
     async def _fetch_data(self) -> list[yf.EarningsEvent]:
         """
         Asynchronously fetch earnings data for the configured date.
-        The underlying `yf.get_earnings` call is synchronous, so it's run
-        in a thread pool to avoid blocking the event loop.
         """
         try:
-            events = await asyncio.to_thread(
-                yf.get_earnings, self.poll_date, as_dataframe=False
-            )
+            events = await yf.get_earnings(self.poll_date, as_dataframe=False)
+            
             # The as_dataframe=False should ensure this is a list,
             # but we ignore to satisfy the linter.
             return events or [] # type: ignore
