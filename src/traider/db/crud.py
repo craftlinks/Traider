@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import logging
 import sqlite3
-from typing import Iterable, Mapping, Optional, List, Dict
+from typing import Optional, List, Dict, TYPE_CHECKING
 
 from .database import get_db_connection, create_tables
 
@@ -136,6 +136,211 @@ def add_url(*, company_ticker: str, url_type: str, url: str, conn: sqlite3.Conne
             conn.rollback()
         logger.exception("SQLite error while adding url for %s: %s", company_ticker, exc)
         raise
+    finally:
+        if owns_connection:
+            conn.close()
+
+
+# ---------------------------------------------------------------------------
+# New persistence helpers (moved from yfinance._models)
+# ---------------------------------------------------------------------------
+
+if TYPE_CHECKING:  # pragma: no cover – avoid runtime import cycles
+    from traider.yfinance._models import Profile, EarningsEvent, PressRelease
+    from traider.yfinance._helpers import (
+        _validate_ticker,
+        _validate_company_name,
+        _validate_datetime,
+        _validate_numeric,
+        _validate_string,
+    )
+
+
+def save_profile(*, ticker: str, profile: "Profile", conn: sqlite3.Connection | None = None) -> None:
+    """Persist *profile* information for *ticker*.
+
+    This function updates the ``companies`` and ``urls`` tables as required. It
+    mirrors the original logic previously found in :pyfunc:`Profile.to_db`.
+    """
+
+    owns_connection = conn is None
+    if conn is None:
+        conn = get_db_connection()
+
+    try:
+        # 1. Persist homepage URL (if provided)
+        if profile.website_url:
+            add_url(company_ticker=ticker, url_type="website", url=profile.website_url, conn=conn)
+
+        # 2. Persist sector / industry metadata (if any)
+        if profile.sector or profile.industry:
+            conn.execute(
+                """
+                UPDATE companies
+                SET sector   = COALESCE(?, sector),
+                    industry = COALESCE(?, industry)
+                WHERE ticker = ?
+                """,
+                (profile.sector, profile.industry, ticker.upper()),
+            )
+
+            logger.info("Company %s profile updated successfully", ticker)
+
+        if owns_connection:
+            conn.commit()
+    except sqlite3.Error as exc:
+        logger.exception("SQLite error while saving profile for %s: %s", ticker, exc)
+        if owns_connection:
+            conn.rollback()
+        raise
+    finally:
+        if owns_connection:
+            conn.close()
+
+
+def save_earnings_event(event: "EarningsEvent", conn: sqlite3.Connection | None = None) -> int | None:  # noqa: C901 – complex, acceptable
+    """Upsert *event* into ``earnings_reports``.
+
+    Returns the primary key *id* of the affected row or *None* on failure.
+    """
+
+    owns_connection = conn is None
+    if conn is None:
+        conn = get_db_connection()
+
+    # Import validators lazily to avoid circular-import issues during
+    # application startup and to ensure they are available at runtime.
+    from traider.yfinance._helpers import (
+        _validate_ticker,
+        _validate_company_name,
+        _validate_datetime,
+        _validate_numeric,
+        _validate_string,
+    )
+
+    try:
+        symbol = _validate_ticker(event.ticker)
+        company_name = _validate_company_name(event.company_name)
+        call_time = _validate_datetime(event.earnings_call_time)
+
+        if not symbol or not company_name:
+            logger.debug("Skipping invalid earnings event – symbol=%s, company=%s", event.ticker, event.company_name)
+            return None
+
+        # Ensure company exists
+        conn.execute(
+            "INSERT OR IGNORE INTO companies (ticker, company_name) VALUES (?, ?);",
+            (symbol, company_name),
+        )
+
+        sql = (
+            "INSERT INTO earnings_reports (company_ticker, report_datetime, event_name, time_type, "
+            "eps_estimate, reported_eps, surprise_percentage, market_cap) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?) "
+            "ON CONFLICT(company_ticker, report_datetime) DO UPDATE SET "
+            "event_name=excluded.event_name, time_type=excluded.time_type, "
+            "eps_estimate=excluded.eps_estimate, reported_eps=excluded.reported_eps, "
+            "surprise_percentage=excluded.surprise_percentage, market_cap=excluded.market_cap, "
+            "updated_at=CURRENT_TIMESTAMP"
+        )
+
+        params = (
+            symbol,
+            call_time,
+            _validate_string(event.event_name),
+            _validate_string(event.time_type),
+            _validate_numeric(event.eps_estimate),
+            _validate_numeric(event.eps_actual),
+            _validate_numeric(event.eps_surprise_percent),
+            _validate_numeric(event.market_cap),
+        )
+
+        cursor = conn.execute(sql, params)
+        row_id = cursor.lastrowid
+
+        if not row_id:
+            # UPDATE path – fetch existing ID
+            cur2 = conn.execute(
+                "SELECT id FROM earnings_reports WHERE company_ticker = ? AND report_datetime = ?",
+                (symbol, call_time),
+            )
+            row = cur2.fetchone()
+            if row is not None:
+                row_id = row[0]
+
+        if row_id is None:
+            if owns_connection:
+                conn.rollback()
+            logger.error("Unable to obtain primary key for earnings event (%s, %s)", symbol, call_time)
+            return None
+
+        if owns_connection:
+            conn.commit()
+
+        return int(row_id)
+    except sqlite3.Error as exc:
+        if owns_connection:
+            conn.rollback()
+        logger.exception("SQLite error while saving earnings event for %s: %s", event.ticker, exc)
+        return None
+    finally:
+        if owns_connection:
+            conn.close()
+
+
+def save_press_release(release: "PressRelease", conn: sqlite3.Connection | None = None) -> int | None:
+    """Upsert *release* into ``press_releases`` table and return its PK id."""
+
+    owns_connection = conn is None
+    if conn is None:
+        conn = get_db_connection()
+
+    try:
+        sql = (
+            "INSERT INTO press_releases (company_ticker, title, url, type, pub_date, display_time, "
+            "company_name, raw_html, text_content) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) "
+            "ON CONFLICT(url) DO UPDATE SET "
+            "company_ticker = excluded.company_ticker, title = excluded.title, "
+            "type = excluded.type, pub_date = excluded.pub_date, "
+            "display_time = excluded.display_time, company_name = excluded.company_name, "
+            "raw_html = excluded.raw_html, text_content = excluded.text_content;"
+        )
+
+        params = (
+            release.ticker.upper(),
+            release.title,
+            release.url,
+            release.type,
+            release.pub_date,
+            release.display_time,
+            release.company_name,
+            release.raw_html,
+            release.text_content,
+        )
+
+        cursor = conn.execute(sql, params)
+        row_id = cursor.lastrowid
+
+        if not row_id:
+            row = conn.execute("SELECT id FROM press_releases WHERE url = ?;", (release.url,)).fetchone()
+            if row is not None:
+                row_id = row[0]
+
+        if row_id is None:
+            if owns_connection:
+                conn.rollback()
+            logger.error("Unable to obtain primary key for press release %s", release.url)
+            return None
+
+        if owns_connection:
+            conn.commit()
+        return int(row_id)
+    except sqlite3.Error as exc:
+        if owns_connection:
+            conn.rollback()
+        logger.exception("SQLite error while saving press release %s: %s", release.url, exc)
+        return None
     finally:
         if owns_connection:
             conn.close()
