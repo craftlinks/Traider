@@ -5,14 +5,22 @@ import logging
 from pathlib import Path
 from typing import Optional
 
+from appdirs import user_data_dir
+
 # Configure module-level logger
 logger = logging.getLogger(__name__)
 
-# --- Paths (no changes needed here) ---
+_APP_NAME = "Traider"
+_APP_AUTHOR = "CraftLinks"
+
+_DATA_DIR = Path(user_data_dir(_APP_NAME, _APP_AUTHOR))
+_DATA_DIR.mkdir(parents=True, exist_ok=True)
+DATABASE_FILE: Path = _DATA_DIR / "trading_platform.db"
+
 _PROJECT_ROOT = Path(__file__).resolve().parents[3]
 _STORAGE_DIR = _PROJECT_ROOT / "storage"
 _STORAGE_DIR.mkdir(exist_ok=True)
-DATABASE_FILE: Path = _STORAGE_DIR / "trading_platform.db"
+
 
 # Path to the new schema file
 SCHEMA_FILE = Path(__file__).parent / "schema.sql"
@@ -28,7 +36,6 @@ def get_db_connection() -> sqlite3.Connection:
     return conn
 
 
-# --- REFACTORED create_tables function ---
 def create_tables(conn: Optional[sqlite3.Connection] = None) -> None:
     """
     Create all database tables by executing the schema.sql script.
@@ -59,5 +66,4 @@ def create_tables(conn: Optional[sqlite3.Connection] = None) -> None:
 
 
 if __name__ == "__main__":
-    # The command-line interface is now even cleaner
     create_tables()

@@ -7,7 +7,6 @@ from bs4 import BeautifulSoup
 from datetime import datetime
 
 from ._constants import _USER_AGENT
-from ._api import initialize
 from ._models import EarningsEvent
 
 logger = logging.getLogger(__name__)

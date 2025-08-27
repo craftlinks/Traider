@@ -39,7 +39,7 @@ def test_earnings_event_to_db(db_connection, monkeypatch):
     # 2. ACT
     # Call the method we want to test. It will internally use our monkeypatched
     # connection. Note: we don't pass a connection, so it creates its own.
-    row_id = test_event.to_db()
+    row_id = test_event.to_db(conn=db_connection)
 
     # 3. ASSERT
     assert row_id is not None
@@ -78,7 +78,7 @@ def test_profile_to_db_updates_company(db_connection, monkeypatch):
     # might need to patch that too if it has side effects we want to control.
     # For now, let's assume it's okay or we can patch it as well.
     monkeypatch.setattr(DB_CONNECTION_PATH, lambda: db_connection)
-    monkeypatch.setattr("traider.db.data_manager.add_url", lambda **kwargs: None) # Mock this out
+    monkeypatch.setattr("traider.db.crud.add_url", lambda **kwargs: None) # Mock this out
 
     # ARRANGE: Pre-populate the database with a company
     db_connection.execute(
@@ -94,7 +94,7 @@ def test_profile_to_db_updates_company(db_connection, monkeypatch):
     )
 
     # ACT
-    test_profile.to_db(ticker="NVDA")
+    test_profile.to_db(ticker="NVDA", conn=db_connection)
 
     # ASSERT
     updated_company = db_connection.execute(
@@ -104,3 +104,59 @@ def test_profile_to_db_updates_company(db_connection, monkeypatch):
     assert updated_company is not None
     assert updated_company["sector"] == "Technology"
     assert updated_company["industry"] == "Semiconductors"
+
+
+def test_press_release_to_db(db_connection, monkeypatch):
+    """
+    GIVEN a PressRelease instance
+    WHEN its to_db() method is called
+    THEN the event data should be correctly inserted into the database.
+    """
+    # 1. ARRANGE
+    from traider.yfinance import PressRelease
+    monkeypatch.setattr(DB_CONNECTION_PATH, lambda: db_connection)
+
+    # Pre-populate the database with a company for the foreign key constraint
+    db_connection.execute(
+        "INSERT INTO companies (ticker, company_name) VALUES (?, ?)",
+        ("TEST", "Test Corp")
+    )
+    db_connection.commit()
+
+    # Create a sample data object
+    test_release = PressRelease(
+        ticker="TEST",
+        title="Test Title",
+        url="https://test.com/release",
+        type="8-K",
+        pub_date="2023-01-01",
+        display_time="10:00 AM",
+        company_name="Test Corp",
+        raw_html="<html><body>Test</body></html>",
+        text_content="Test"
+    )
+
+    # 2. ACT
+    row_id = test_release.to_db(conn=db_connection)
+
+    # 3. ASSERT
+    assert row_id is not None
+    assert row_id > 0
+
+    # Verify the data was written correctly
+    cursor = db_connection.cursor()
+    cursor.execute(
+        "SELECT * FROM press_releases WHERE company_ticker = ?", ("TEST",)
+    )
+    row = cursor.fetchone()
+
+    assert row is not None
+    assert row["company_ticker"] == "TEST"
+    assert row["title"] == "Test Title"
+    assert row["url"] == "https://test.com/release"
+    assert row["type"] == "8-K"
+    assert row["pub_date"] == "2023-01-01"
+    assert row["display_time"] == "10:00 AM"
+    assert row["company_name"] == "Test Corp"
+    assert row["raw_html"] == "<html><body>Test</body></html>"
+    assert row["text_content"] == "Test"

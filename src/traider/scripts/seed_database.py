@@ -23,8 +23,7 @@ import sys
 from pathlib import Path
 from typing import Mapping, Sequence, Any
 
-from traider.db import create_tables, add_company_and_exchange
-from traider.db import add_company
+from traider.db import create_tables, add_company_and_exchange, add_company, add_url, add_earnings_report, get_company_by_ticker, list_companies, get_earnings_by_date, get_earnings_for_ticker
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger(__name__)
@@ -112,6 +111,47 @@ def main(argv: list[str] | None = None) -> None:
             logger.error("Failed to ingest record %s: %s", record, exc)
 
     logger.info("Added/updated %d company records.", records_added)
+
+
+
+# if __name__ == "__main__":
+#     import argparse
+#     import json
+#     from pathlib import Path
+
+#     parser = argparse.ArgumentParser(description="Basic data manager CLI utilities.")
+#     subparsers = parser.add_subparsers(dest="command", required=True)
+
+#     # init command
+#     init_parser = subparsers.add_parser("init", help="Create database tables")
+
+#     # seed command
+#     seed_parser = subparsers.add_parser("seed", help="Seed DB from JSON file")
+#     seed_parser.add_argument("json_file", type=Path, help="Path to companies JSON file")
+
+#     args = parser.parse_args()
+
+#     if args.command == "init":
+#         create_tables()
+#         print("Tables created.")
+#     elif args.command == "seed":
+#         create_tables()
+#         if not args.json_file.exists():
+#             parser.error(f"JSON file {args.json_file} does not exist")
+#         data: Iterable[Mapping[str, object]] = json.loads(args.json_file.read_text())
+#         for record in data:
+#             try:
+#                 add_company_and_exchange(
+#                     ticker=str(record["ticker"]),
+#                     cik=str(record["cik_str"]),
+#                     company_name=str(record["title"]),
+#                     exchange_name=str(record["exchange"]),
+#                 )
+#             except Exception:  # pragma: no cover
+#                 # Log already done inside helper
+#                 continue
+#         print("Seed completed.")
+
 
 
 if __name__ == "__main__":

@@ -107,29 +107,38 @@ def add_company_and_exchange(
             raise
 
 
-def add_url(*, company_ticker: str, url_type: str, url: str) -> None:
+def add_url(*, company_ticker: str, url_type: str, url: str, conn: sqlite3.Connection | None = None) -> None:
     """Add or replace a URL for a company.
 
     The UNIQUE(company_ticker, url_type) constraint ensures idempotency. We use
     "REPLACE" semantics to update an existing URL of the same type.
     """
-    with get_db_connection() as conn:
-        try:
-            conn.execute(
-                """
-                INSERT INTO urls (company_ticker, url_type, url)
-                VALUES (?, ?, ?)
-                ON CONFLICT(company_ticker, url_type)
-                DO UPDATE SET url = excluded.url;
-                """,
-                (company_ticker.upper(), url_type.lower(), url),
-            )
+    
+    owns_connection = conn is None
+    if conn is None:
+        conn = get_db_connection()
+
+    try:
+        conn.execute(
+            """
+            INSERT INTO urls (company_ticker, url_type, url)
+            VALUES (?, ?, ?)
+            ON CONFLICT(company_ticker, url_type)
+            DO UPDATE SET url = excluded.url;
+            """,
+            (company_ticker.upper(), url_type.lower(), url),
+        )
+        if owns_connection:
             conn.commit()
-            logger.info("Set %s URL for %s", url_type, company_ticker)
-        except sqlite3.Error as exc:
+        logger.info("Set %s URL for %s", url_type, company_ticker)
+    except sqlite3.Error as exc:
+        if owns_connection:
             conn.rollback()
-            logger.exception("SQLite error while adding url for %s: %s", company_ticker, exc)
-            raise
+        logger.exception("SQLite error while adding url for %s: %s", company_ticker, exc)
+        raise
+    finally:
+        if owns_connection:
+            conn.close()
 
 
 # ---------------------------------------------------------------------------
@@ -275,44 +284,3 @@ def get_earnings_for_ticker(ticker: str) -> List[Dict[str, object]]:
         return [dict(r) for r in cursor.fetchall()]
 
 
-# ---------------------------------------------------------------------------
-# Module CLI helpers (useful for quick checks)
-# ---------------------------------------------------------------------------
-
-if __name__ == "__main__":
-    import argparse
-    import json
-    from pathlib import Path
-
-    parser = argparse.ArgumentParser(description="Basic data manager CLI utilities.")
-    subparsers = parser.add_subparsers(dest="command", required=True)
-
-    # init command
-    init_parser = subparsers.add_parser("init", help="Create database tables")
-
-    # seed command
-    seed_parser = subparsers.add_parser("seed", help="Seed DB from JSON file")
-    seed_parser.add_argument("json_file", type=Path, help="Path to companies JSON file")
-
-    args = parser.parse_args()
-
-    if args.command == "init":
-        create_tables()
-        print("Tables created.")
-    elif args.command == "seed":
-        create_tables()
-        if not args.json_file.exists():
-            parser.error(f"JSON file {args.json_file} does not exist")
-        data: Iterable[Mapping[str, object]] = json.loads(args.json_file.read_text())
-        for record in data:
-            try:
-                add_company_and_exchange(
-                    ticker=str(record["ticker"]),
-                    cik=str(record["cik_str"]),
-                    company_name=str(record["title"]),
-                    exchange_name=str(record["exchange"]),
-                )
-            except Exception:  # pragma: no cover
-                # Log already done inside helper
-                continue
-        print("Seed completed.")

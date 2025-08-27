@@ -4,7 +4,7 @@ from datetime import datetime
 import logging
 
 from traider.db.database import get_db_connection
-from ._helpers import _validate_ticker, _validate_company_name, _validate_datetime, _validate_numeric, _validate_string
+
 
 logger = logging.getLogger(__name__)
 
@@ -41,7 +41,7 @@ class Profile:
         fresh connection is acquired automatically.
         """
 
-        from traider.db.data_manager import add_url  # local import to avoid cycles
+        from traider.db.crud import add_url  # local import to avoid cycles
 
         owns_connection = conn is None
         if conn is None:
@@ -49,7 +49,7 @@ class Profile:
 
         # 1. Persist homepage URL (if any)
         if self.website_url:
-            add_url(company_ticker=ticker, url_type="website", url=self.website_url)
+            add_url(company_ticker=ticker, url_type="website", url=self.website_url, conn=conn)
 
         # 2. Persist sector / industry metadata (if any)
         if self.sector or self.industry:
@@ -63,12 +63,14 @@ class Profile:
                     """,
                     (self.sector, self.industry, ticker.upper()),
                 )
-                conn.commit()
+                
                 logger.info("Company %s profile updated successfully", ticker)
             except Exception as exc:  # noqa: BLE001
                 logger.exception("DB error while updating company %s: %s", ticker, exc)
                 conn.rollback()
+        
         if owns_connection:
+            conn.commit()
             conn.close()
 
 
@@ -109,14 +111,13 @@ class EarningsEvent:
         returns the primary-key *id* of the upserted row (or *None* on
         failure).
         """
+        from ._helpers import _validate_ticker, _validate_company_name, _validate_datetime, _validate_numeric, _validate_string
 
         owns_connection = conn is None
         if conn is None:
             conn = get_db_connection()
 
         try:
-            conn.execute("BEGIN TRANSACTION")
-
             symbol = _validate_ticker(self.ticker)
             company_name = _validate_company_name(self.company_name)
             call_time = _validate_datetime(self.earnings_call_time)
@@ -139,7 +140,7 @@ class EarningsEvent:
                 "event_name=excluded.event_name, time_type=excluded.time_type, "
                 "eps_estimate=excluded.eps_estimate, reported_eps=excluded.reported_eps, "
                 "surprise_percentage=excluded.surprise_percentage, market_cap=excluded.market_cap, "
-                "updated_at=CURRENT_TIMESTAMP RETURNING id;"
+                "updated_at=CURRENT_TIMESTAMP"
             )
 
             params = (
@@ -153,11 +154,24 @@ class EarningsEvent:
                 _validate_numeric(self.market_cap),
             )
 
-            row = conn.execute(sql, params).fetchone()
-            conn.commit()
-            if row is None:
+            cursor = conn.execute(sql, params)
+            
+            row_id = cursor.lastrowid
+            if row_id is None or row_id == 0:
+                # This can happen on an UPDATE. We need to fetch the ID.
+                cursor = conn.execute("SELECT id FROM earnings_reports WHERE company_ticker = ? AND report_datetime = ?", (symbol, call_time))
+                row = cursor.fetchone()
+                if row:
+                    row_id = row[0]
+
+            if row_id is None:
+                conn.rollback()
                 return None
-            return int(row[0])
+            
+            if owns_connection:
+                conn.commit()
+
+            return int(row_id)
         except sqlite3.Error as exc:
             conn.rollback()
             logger.exception("SQLite error while saving earnings event: %s", exc)
