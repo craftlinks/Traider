@@ -28,9 +28,9 @@ class Profile:
         """
 
         return Profile(
-            website_url=row.get("website_url") if "website_url" in row.keys() else None,  # type: ignore[attr-defined]
-            sector=row.get("sector") if "sector" in row.keys() else None,  # type: ignore[attr-defined]
-            industry=row.get("industry") if "industry" in row.keys() else None,  # type: ignore[attr-defined]
+            website_url=row["website_url"] if "website_url" in row.keys() else None,
+            sector=row["sector"] if "sector" in row.keys() else None,
+            industry=row["industry"] if "industry" in row.keys() else None,
         )
 
     def to_db(self, *, ticker: str, conn: sqlite3.Connection | None = None) -> None:  # noqa: D401 (imperative mood)

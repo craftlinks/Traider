@@ -160,3 +160,152 @@ def test_press_release_to_db(db_connection, monkeypatch):
     assert row["company_name"] == "Test Corp"
     assert row["raw_html"] == "<html><body>Test</body></html>"
     assert row["text_content"] == "Test"
+
+
+# ---------------------------------------------------------------------------
+# .from_db() helpers
+# ---------------------------------------------------------------------------
+
+def test_earnings_event_from_db(db_connection):
+    """
+    GIVEN an earnings_reports row in the DB
+    WHEN EarningsEvent.from_db() is called with that row
+    THEN it should return a correctly populated EarningsEvent instance.
+    """
+    from traider.yfinance import EarningsEvent
+
+    # ARRANGE – pre-populate supporting company & earnings data
+    db_connection.execute(
+        "INSERT INTO companies (ticker, company_name) VALUES (?, ?)",
+        ("ACME", "Acme Corp"),
+    )
+    db_connection.execute(
+        """
+        INSERT INTO earnings_reports (
+            company_ticker, report_datetime, event_name, time_type,
+            eps_estimate, reported_eps, surprise_percentage, market_cap
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            "ACME",
+            "2024-03-31T13:00:00+00:00",
+            "Q1 2024",
+            "AMC",  # After Market Close
+            0.42,
+            0.50,
+            19.05,
+            1_500_000_000,
+        ),
+    )
+    row = db_connection.execute(
+        "SELECT * FROM earnings_reports WHERE company_ticker = ?", ("ACME",)
+    ).fetchone()
+
+    # ACT
+    event = EarningsEvent.from_db(row)
+
+    # ASSERT
+    assert event.ticker == "ACME"
+    assert event.event_name == "Q1 2024"
+    assert event.time_type == "AMC"
+    assert event.earnings_call_time == "2024-03-31T13:00:00+00:00"
+    assert event.eps_estimate == 0.42
+    assert event.eps_actual == 0.50
+    # from_db computes surprise as difference; allow float precision margin
+    assert abs(event.eps_surprise - (0.50 - 0.42)) < 1e-9
+    assert event.eps_surprise_percent == 19.05
+    assert event.market_cap == 1_500_000_000
+
+
+def test_profile_from_db(db_connection):
+    """
+    GIVEN a companies row (with optional sector/industry) and a related website URL
+    WHEN Profile.from_db() is called with a joined row
+    THEN it should return a correctly populated Profile instance.
+    """
+    from traider.yfinance import Profile
+
+    # ARRANGE – insert baseline company record
+    db_connection.execute(
+        "INSERT INTO companies (ticker, company_name, sector, industry) VALUES (?, ?, ?, ?)",
+        ("NVDA", "NVIDIA Corporation", "Technology", "Semiconductors"),
+    )
+    # insert website url into urls table
+    db_connection.execute(
+        "INSERT INTO urls (company_ticker, url_type, url) VALUES (?, ?, ?)",
+        ("NVDA", "website", "https://nvidia.com"),
+    )
+
+    # Create a row that has website_url, sector and industry columns.
+    row = db_connection.execute(
+        """
+        SELECT (
+            SELECT url FROM urls WHERE company_ticker = companies.ticker AND url_type = 'website'
+        )             AS website_url,
+               sector AS sector,
+               industry AS industry
+        FROM companies
+        WHERE ticker = ?
+        """,
+        ("NVDA",),
+    ).fetchone()
+
+    # ACT
+    profile = Profile.from_db(row)
+
+    # ASSERT
+    assert profile.website_url == "https://nvidia.com"
+    assert profile.sector == "Technology"
+    assert profile.industry == "Semiconductors"
+
+
+def test_press_release_from_db(db_connection):
+    """
+    GIVEN a press_releases row in the DB
+    WHEN PressRelease.from_db() is called with that row
+    THEN it should return a correctly populated PressRelease instance.
+    """
+    from traider.yfinance import PressRelease
+
+    # ARRANGE – ensure company exists and insert press release
+    db_connection.execute(
+        "INSERT INTO companies (ticker, company_name) VALUES (?, ?)",
+        ("ABC", "ABC Corp"),
+    )
+    db_connection.execute(
+        """
+        INSERT INTO press_releases (
+            company_ticker, title, url, type, pub_date, display_time,
+            company_name, raw_html, text_content
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            "ABC",
+            "Big News",
+            "https://abc.com/pr",
+            "News",
+            "2024-04-01",
+            "09:00 AM",
+            "ABC Corp",
+            "<html>news</html>",
+            "news text",
+        ),
+    )
+
+    row = db_connection.execute(
+        "SELECT * FROM press_releases WHERE company_ticker = ?", ("ABC",)
+    ).fetchone()
+
+    # ACT
+    pr = PressRelease.from_db(row)
+
+    # ASSERT
+    assert pr.ticker == "ABC"
+    assert pr.title == "Big News"
+    assert pr.url == "https://abc.com/pr"
+    assert pr.type == "News"
+    assert pr.pub_date == "2024-04-01"
+    assert pr.display_time == "09:00 AM"
+    assert pr.company_name == "ABC Corp"
+    assert pr.raw_html == "<html>news</html>"
+    assert pr.text_content == "news text"
