@@ -16,11 +16,6 @@ import requests
 from bs4 import BeautifulSoup
 
 from traider.db.database import get_db_connection
-from traider.platforms.yahoo.helpers import (
-    extract_earnings_data_json,
-    extract_profile_data_html,
-    extract_profile_data_json,
-)
 
 # ---------------------------------------------------------------------------
 # Logging
@@ -236,6 +231,105 @@ def _df_to_events(df: pd.DataFrame) -> list[EarningsEvent]:
     return events
 
 # ---------------------------------------------------------------------------
+# Helper extraction functions (migrated from OLD_helpers.py)
+# ---------------------------------------------------------------------------
+
+def _extract_profile_data_html(html: str) -> tuple[Optional[str], Optional[str], Optional[str]]:
+    """Parse Yahoo profile HTML and return (website_url, sector, industry)."""
+    soup = BeautifulSoup(html, "html.parser")
+
+    # --- Website URL --------------------------------------------------------
+    website_url: Optional[str] = None
+    website_tag = soup.select_one("a[data-ylk*='business-url']")
+    if website_tag is not None:
+        # The visible text already contains the fully-qualified URL
+        website_url = website_tag.get_text(strip=True)
+        # Occasionally the anchor text contains an ellipsis while the full URL
+        # is stored inside the *href*. Prefer *href* in that case.
+        href_val = website_tag.get("href")
+        if isinstance(href_val, str) and href_val.startswith("http"):
+            website_url = href_val.strip()
+
+    # --- Sector -------------------------------------------------------------
+    sector: Optional[str] = None
+    dt_sector = soup.find("dt", string=lambda s: isinstance(s, str) and "Sector" in s)
+    if dt_sector is not None:
+        sector_anchor = dt_sector.find_next("a")
+        if sector_anchor is not None:
+            sector = sector_anchor.get_text(strip=True)
+
+    # --- Industry -----------------------------------------------------------
+    industry: Optional[str] = None
+    dt_industry = soup.find("dt", string=lambda s: isinstance(s, str) and "Industry" in s)
+    if dt_industry is not None:
+        industry_anchor = dt_industry.find_next("a")
+        if industry_anchor is not None:
+            industry = industry_anchor.get_text(strip=True)
+
+    return website_url, sector, industry
+
+
+def _extract_profile_data_json(json: dict[str, Any]) -> tuple[Optional[str], Optional[str], Optional[str]]:
+    """Parse Yahoo profile JSON and return (website_url, sector, industry)."""
+    profile = json.get("quoteSummary", {}).get("result", [{}])[0].get("assetProfile", {})
+    website = profile.get("website")
+    sector = profile.get("sector")
+    industry = profile.get("industry")
+    return website, sector, industry
+
+
+def _extract_earnings_data_json(api_payload: dict[str, Any]) -> pd.DataFrame:
+    """Parse the Yahoo earnings JSON and return a DataFrame."""
+    documents: list[dict] = api_payload.get("finance", {}).get("result", [{}])[0].get("documents", [])
+    if not documents:
+        logger.info("No earnings rows returned by Yahoo.")
+        return pd.DataFrame()
+
+    doc = documents[0]
+    rows = doc.get("rows", [])
+    columns_meta = doc.get("columns", [])
+    if not rows or not columns_meta:
+        logger.info("Unexpected response structure – rows or columns missing.")
+        return pd.DataFrame()
+
+    columns = [col["id"] for col in columns_meta]
+    df = pd.DataFrame(rows, columns=columns) # type: ignore[arg-type]
+
+    # Friendly column names
+    df.rename(
+        columns={
+            "ticker": "Symbol",
+            "companyshortname": "Company",
+            "eventname": "Event Name",
+            "startdatetime": "Earnings Call Time",
+            "startdatetimetype": "Time Type",
+            "epsestimate": "EPS Estimate",
+            "epsactual": "Reported EPS",
+            "epssurprisepct": "Surprise (%)",
+            "intradaymarketcap": "Market Cap",
+        },
+        inplace=True,
+    )
+
+    # Timestamp → timezone-aware datetime
+    if "Earnings Call Time" in df.columns and not df["Earnings Call Time"].empty:
+        col = df["Earnings Call Time"]
+        if pd.api.types.is_numeric_dtype(col):
+            # milliseconds since epoch UTC
+            df["Earnings Call Time"] = pd.to_datetime(col, unit="ms", utc=True)
+        else:
+            # ISO‐8601 strings like 2025-08-14T04:00:00.000Z
+            df["Earnings Call Time"] = pd.to_datetime(col, utc=True, errors="coerce")
+
+    # Ensure numeric columns are typed correctly
+    for col in ["EPS Estimate", "Reported EPS", "Surprise (%)", "Market Cap"]:
+        if col in df.columns:
+            df[col] = pd.to_numeric(df[col], errors="coerce")
+
+    logger.debug("Successfully fetched %d earnings rows.", len(df))
+    return df
+
+# ---------------------------------------------------------------------------
 # Public API – profile
 # ---------------------------------------------------------------------------
 
@@ -255,9 +349,9 @@ def get_profile(ticker: str, *, from_json: bool = False) -> Profile:
             resp.raise_for_status()
 
             if from_json:
-                website, sector, industry = extract_profile_data_json(resp.json())
+                website, sector, industry = _extract_profile_data_json(resp.json())
             else:
-                website, sector, industry = extract_profile_data_html(resp.text)
+                website, sector, industry = _extract_profile_data_html(resp.text)
             return Profile(website, sector, industry)
         except requests.RequestException as exc:
             if attempt < max_attempts - 1:
@@ -327,7 +421,7 @@ def get_earnings(start_date: date, *, as_dataframe: bool = True, max_retries: in
                 cookies={_cookie.name: str(_cookie.value)} if _cookie else None,  # type: ignore[arg-type]
             )
             resp.raise_for_status()
-            df = extract_earnings_data_json(resp.json())
+            df = _extract_earnings_data_json(resp.json())
             return df if as_dataframe else _df_to_events(df)
         except requests.RequestException as exc:
             logger.error("Network error contacting Yahoo (%d/%d): %s", attempt + 1, max_retries, exc)
