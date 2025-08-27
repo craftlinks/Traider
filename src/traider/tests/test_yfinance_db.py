@@ -1,7 +1,7 @@
 # in traider/tests/test_yfinance_db.py
 
 from datetime import datetime
-import pytest
+import pytest_asyncio
 
 
 from traider.yfinance import EarningsEvent
@@ -10,17 +10,13 @@ from traider.yfinance import EarningsEvent
 # Adjust this path to match your project structure.
 DB_CONNECTION_PATH = "traider.db.database.get_db_connection"
 
-def test_earnings_event_to_db(db_connection, monkeypatch):
+async def test_earnings_event_to_db(db_connection):
     """
     GIVEN an EarningsEvent instance
     WHEN its to_db() method is called
     THEN the event data should be correctly inserted into the database.
     """
     # 1. ARRANGE
-    # Monkeypatch the get_db_connection function. Any code that calls it
-    # will now receive our in-memory test DB connection instead of the real one.
-    monkeypatch.setattr(DB_CONNECTION_PATH, lambda: db_connection)
-
     # Create a sample data object
     test_event = EarningsEvent(
         id=-1,  # Assuming ID is not used for insertion
@@ -37,9 +33,9 @@ def test_earnings_event_to_db(db_connection, monkeypatch):
     )
 
     # 2. ACT
-    # Call the method we want to test. It will internally use our monkeypatched
-    # connection. Note: we don't pass a connection, so it creates its own.
-    row_id = test_event.to_db(conn=db_connection)
+    # The to_db method will now use the temporary database file configured
+    # in the conftest.py setup.
+    row_id = await test_event.to_db()
 
     # 3. ASSERT
     assert row_id is not None
@@ -67,7 +63,7 @@ def test_earnings_event_to_db(db_connection, monkeypatch):
     assert company_row["company_name"] == "Test Corp"
 
 
-def test_profile_to_db_updates_company(db_connection, monkeypatch):
+async def test_profile_to_db_updates_company(db_connection):
     """
     GIVEN an existing company in the DB
     WHEN a Profile object is saved with to_db()
@@ -77,8 +73,6 @@ def test_profile_to_db_updates_company(db_connection, monkeypatch):
     # Note: the local import of add_url in your Profile.to_db means we
     # might need to patch that too if it has side effects we want to control.
     # For now, let's assume it's okay or we can patch it as well.
-    monkeypatch.setattr(DB_CONNECTION_PATH, lambda: db_connection)
-    monkeypatch.setattr("traider.db.crud.add_url", lambda **kwargs: None) # Mock this out
 
     # ARRANGE: Pre-populate the database with a company
     db_connection.execute(
@@ -94,7 +88,7 @@ def test_profile_to_db_updates_company(db_connection, monkeypatch):
     )
 
     # ACT
-    test_profile.to_db(ticker="NVDA", conn=db_connection)
+    await test_profile.to_db(ticker="NVDA")
 
     # ASSERT
     updated_company = db_connection.execute(
@@ -106,7 +100,7 @@ def test_profile_to_db_updates_company(db_connection, monkeypatch):
     assert updated_company["industry"] == "Semiconductors"
 
 
-def test_press_release_to_db(db_connection, monkeypatch):
+async def test_press_release_to_db(db_connection):
     """
     GIVEN a PressRelease instance
     WHEN its to_db() method is called
@@ -114,7 +108,6 @@ def test_press_release_to_db(db_connection, monkeypatch):
     """
     # 1. ARRANGE
     from traider.yfinance import PressRelease
-    monkeypatch.setattr(DB_CONNECTION_PATH, lambda: db_connection)
 
     # Pre-populate the database with a company for the foreign key constraint
     db_connection.execute(
@@ -137,7 +130,7 @@ def test_press_release_to_db(db_connection, monkeypatch):
     )
 
     # 2. ACT
-    row_id = test_release.to_db(conn=db_connection)
+    row_id = await test_release.to_db()
 
     # 3. ASSERT
     assert row_id is not None
