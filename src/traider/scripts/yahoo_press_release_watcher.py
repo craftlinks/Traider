@@ -7,14 +7,10 @@ import logging
 from traider.interfaces.queue_sink import AsyncQueueSink
 from traider.platforms.pollers.yahoo_earnings_poller import YahooEarningsPoller
 from traider.platforms.pollers.yahoo_press_release_poller import YahooPressReleasePoller
-from traider.platforms.yahoo.main import PressRelease, YahooFinance
+import traider.platforms.yahoo_finance.api as yf_api
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
-
-yf = YahooFinance()
-
-
 
 def parse_args() -> argparse.Namespace:
     """Parse command-line arguments.
