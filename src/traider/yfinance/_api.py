@@ -2,10 +2,10 @@ from __future__ import annotations
 
 """Yahoo Finance scraping utilities."""
 
-from datetime import date, datetime, timedelta
+from datetime import date, timedelta
 import logging
 import time
-from typing import Any, List, Optional
+from typing import List
 from urllib.parse import quote_plus
 
 import pandas as pd
@@ -16,29 +16,12 @@ from ._constants import _USER_AGENT, _YF_PROFILE_TEMPLATE, _YF_PROFILE_JSON_TEMP
 from ._helpers import _refresh_cookie_and_crumb, _get_session, _extract_profile_data_json, _extract_profile_data_html, _extract_earnings_data_json, _df_to_events, _initialize_session, _crumb, _cookie
 from ._models import Profile, EarningsEvent, PressRelease
 
-
-__all__ = [
-
-    # ---Public Functions---
-    "get_profile",
-    "get_earnings",
-    "get_earnings_for_date_range",
-    "get_press_releases",
-    "get_press_release_content",
-
-    # ---Public Dataclasses (Return Types)---
-    "Profile",
-    "EarningsEvent",
-    "PressRelease",
-
-]
-
 # ---------------------------------------------------------------------------
 # Logging
 # ---------------------------------------------------------------------------
+
 logger = logging.getLogger(__name__)
 logger.addHandler(logging.NullHandler())
-
 
 
 # ---------------------------------------------------------------------------
@@ -48,9 +31,11 @@ logger.addHandler(logging.NullHandler())
 def initialize() -> None:
     _initialize_session()
 
+
 # ---------------------------------------------------------------------------
 # Public API – profile
 # ---------------------------------------------------------------------------
+
 
 def get_profile(ticker: str, *, from_json: bool = False) -> Profile:
     """Return (website, sector, industry) for *ticker*.
