@@ -1,152 +1,233 @@
 from __future__ import annotations
-from datetime import datetime
+import asyncio
+import logging
 import math
+from datetime import date
+from typing import Any, Callable, Awaitable, Union
 
-# from traider.platforms.cache import get_shared_cache
+import traider.yfinance as yf
+from traider.db.database import get_db_connection, create_tables
 from traider.platforms.cache import CacheInterface, get_named_cache
 from traider.pollers.common.base_web_poller import PollerConfig
 from traider.pollers.common.protocol import Poller
-
-"""Utility for fetching Yahoo Finance earnings calendar data in an *authenticated* way
-that mimics the website's internal calls.
-
-The implementation follows these steps – roughly equivalent to what a modern
-browser does when you load https://finance.yahoo.com/calendar/earnings :
-
-1. Request the calendar HTML page to obtain the *crumb* anti-CSRF token that is
-   embedded inside a script tag. The request also seeds the session with the
-   correct cookies (notably the "A1" auth cookie) required by subsequent API
-   calls.
-2. Build the JSON payload understood by Yahoo's private *visualization* API and
-   perform a POST request against
-   https://query1.finance.yahoo.com/v1/finance/visualization while passing the
-   crumb as query parameter. This returns a nested JSON document containing the
-   earnings calendar rows together with column metadata.
-3. Convert the response into a `pandas.DataFrame` with user-friendly column
-   names and types.
-
-Note
-----
-Yahoo does *not* provide a public REST API for this data. Their internal API
-might change without notice. The code tries to fail loudly in case the
-structure of the HTML or JSON payload changes.
-"""
-
-import logging
-from datetime import date
-from typing import Any, Callable, List
-import asyncio
-from typing import cast
-import traider.yfinance as yf
-from traider.db.database import get_db_connection, create_tables
 
 # Set up logging
 logger = logging.getLogger(__name__)
 
 __all__ = ["YahooEarningsPoller"]
 
+# Define a type for a sink, which can be sync or async
+SinkCallable = Union[
+    Callable[[str, yf.EarningsEvent], Any], 
+    Callable[[str, yf.EarningsEvent], Awaitable[Any]]
+]
+
+
 class YahooEarningsPoller(Poller[yf.EarningsEvent]):
-   """Yahoo Earnings Calendar poller."""
-   def __init__(self, date: date = date.today(), interval: int = 60) -> None:
-      config = PollerConfig.from_env(
-         "YEC",
-         default_interval=interval
-      )
-      self.config = config
-      self.today = date
-      self.db_conn = get_db_connection()
-      self.cache: CacheInterface = get_named_cache("yahoo_earnings_calendar")
-      self._sink: Callable[[str, yf.EarningsEvent], Any] | None = None
-      self.interval = interval if interval > 0 else config.polling_interval_seconds
+    """
+    An async-native poller for Yahoo Finance earnings announcements.
+    
+    This component is designed to run as a task within a larger asyncio event loop.
+    It manages its own database connection and can be gracefully shut down.
+    
+    Usage:
+        >>> poller = await YahooEarningsPoller.create()
+        >>> poller.set_sink(my_sink_function)
+        >>> await poller.run()
+    """
 
-      logger.info("Initializing database…")
-      create_tables()
+    # Make __init__ private to enforce creation via the async factory
+    def __init__(self, config: PollerConfig, db_conn: Any, cache: CacheInterface, poll_date: date):
+        self.config = config
+        self.db_conn = db_conn
+        self.cache = cache
+        self.poll_date = poll_date
+        self._sink: SinkCallable | None = None
+        self._shutdown_event = asyncio.Event()
 
-   @property
-   def name(self) -> str:
-      return "yahoo_earnings_calendar"
-
-   def set_sink(self, sink: Callable[[str, yf.EarningsEvent], Any]) -> None:
-      self._sink = sink
-
-   def run(self) -> None:
-      """Starts the asynchronous polling loop."""
-      try:
-         asyncio.run(self._async_polling_loop())
-      except KeyboardInterrupt:
-         logger.info("YahooEarningsPoller shutting down.")
-      finally:
-         self.db_conn.close()
-
-   async def _fetch_data(self, persist_db: bool = True) -> list[yf.EarningsEvent]:  # type: ignore[override]
-      """Asynchronously fetch earnings data for today.
-
-      The underlying `YahooFinance.get_earnings` call is synchronous (uses
-      `requests`).  To avoid blocking the event-loop, it is executed in a
-      thread-pool via `asyncio.to_thread`.
-      """
-      ee: List[yf.EarningsEvent] = cast(List[yf.EarningsEvent], await asyncio.to_thread(yf.get_earnings, self.today, as_dataframe=False))
-      if not ee:
-         logger.info("No earnings data fetched for today")
-      return ee
-
-   async def save_earnings_data_to_db(self, ee: list[yf.EarningsEvent]) -> list[int | None]:
-      return [earning.to_db(conn=self.db_conn) for earning in ee]
-
-   async def _async_polling_loop(self) -> None:
-      while True:
-         ee: list[yf.EarningsEvent] = await self._fetch_data()
-
-         # filter out earnings events for which we have an estimated earnings per share
-         ee = [earning for earning in ee if earning.eps_estimate is not None and not math.isnan(earning.eps_estimate)]
-
-         try:
-            await self.save_earnings_data_to_db(ee)
-            await self._emit_new_earnings(ee)
-
-         except Exception as e:
-            logger.error(f"Failed to save earnings data to database: {e}")
-            raise
-
-         await asyncio.sleep(self.interval)
-
-   async def _filter_and_persist(self, events: list[yf.EarningsEvent]) -> list[yf.EarningsEvent]:
-        """Persist events to DB and return only the ones that are new."""
-        newly_persisted_events = []
-        for event in events:
-            # Use cache to quickly check if we've seen this event's unique identifier
-            # (Assuming EarningsEvent has a unique `id` or you create one)
-            event_id = event.id # e.g., f"{event.ticker}-{event.event_date}"
-            if event_id not in self.cache:
-                await asyncio.to_thread(event.to_db, conn=self.db_conn)
-                self.cache.add(str(event_id))
-                newly_persisted_events.append(event)
-        return newly_persisted_events
+    @classmethod
+    async def create(cls, poll_date: date = date.today(), interval: int = 60) -> "YahooEarningsPoller":
+        """
+        Asynchronously create and initialize a YahooEarningsPoller instance.
+        This is the preferred way to instantiate the class.
+        """
+        config = PollerConfig.from_env("YEC", default_interval=interval)
         
-   async def _emit_new_earnings(self, new_events: list[yf.EarningsEvent]) -> None:
+        # Run blocking DB setup in a thread to avoid blocking the event loop
+        db_conn = await asyncio.to_thread(get_db_connection)
+        await asyncio.to_thread(create_tables)
+        
+        cache = get_named_cache("yahoo_earnings_calendar")
+        
+        logger.info("YahooEarningsPoller initialized.")
+        return cls(config, db_conn, cache, poll_date)
+
+    @property
+    def name(self) -> str:
+        return "yahoo_earnings_calendar"
+
+    def set_sink(self, sink: SinkCallable) -> None:
+        self._sink = sink
+
+    async def _fetch_data(self) -> list[yf.EarningsEvent]:
+        """
+        Asynchronously fetch earnings data for the configured date.
+        The underlying `yf.get_earnings` call is synchronous, so it's run
+        in a thread pool to avoid blocking the event loop.
+        """
+        try:
+            events = await asyncio.to_thread(
+                yf.get_earnings, self.poll_date, as_dataframe=False
+            )
+            # The as_dataframe=False should ensure this is a list,
+            # but we ignore to satisfy the linter.
+            return events or [] # type: ignore
+        except Exception:
+            logger.exception("Failed to fetch earnings data from Yahoo Finance.")
+            return []
+
+    async def _filter_and_persist_new(self, events: list[yf.EarningsEvent]) -> list[yf.EarningsEvent]:
+        """
+        Filters for new events, persists them to the DB, and returns them.
+        This runs the synchronous DB operations in a thread.
+        """
+        new_events = []
+        # Check cache first (fast in-memory check)
+        events_to_check = [e for e in events if e.id and str(e.id) not in self.cache]
+
+        if not events_to_check:
+            return []
+
+        def db_worker():
+            persisted = []
+            for event in events_to_check:
+                # The to_db method handles the logic of INSERT OR IGNORE
+                # and returns the ID if it was a new insert.
+                new_id = event.to_db(conn=self.db_conn)
+                if new_id is not None:
+                    persisted.append(event)
+            return persisted
+        
+        try:
+            new_events = await asyncio.to_thread(db_worker)
+            # Update cache with newly persisted items
+            for event in new_events:
+                self.cache.add(str(event.id))
+            return new_events
+        except Exception:
+            logger.exception("Failed to persist new earnings data to the database.")
+            return []
+
+    async def _emit(self, new_events: list[yf.EarningsEvent]):
         """Emit newly found earnings events to the registered sink."""
+        if not self._sink or not new_events:
+            return
+
+        logger.debug(f"Emitting {len(new_events)} new events to sink...")
+        
+        # Use a TaskGroup to emit concurrently, respecting async sinks
+        async with asyncio.TaskGroup() as tg:
+            for event in new_events:
+                tg.create_task(self._safe_call_sink(event))
+
+    async def _safe_call_sink(self, event: yf.EarningsEvent):
+        """Safely call the sink, handling both sync and async functions."""
         if not self._sink:
             return
-            
-        logger.debug(f"Emitting {len(new_events)} events to sink...")
-        for event in new_events:
-            try:
-                # The sink can be a regular sync function; running it in a thread
-                # prevents it from blocking the async loop.
+        try:
+            if asyncio.iscoroutinefunction(self._sink):
+                await self._sink(self.name, event)
+            else:
+                # Run synchronous sink in a thread to prevent blocking
                 await asyncio.to_thread(self._sink, self.name, event)
-            except Exception:
-                logger.exception("[SINK] Error while emitting item")
+        except Exception:
+            logger.exception("[SINK] Error while emitting item: %s", event)
 
+    async def run(self) -> None:
+        """
+        The main async execution loop for the poller.
+        This coroutine runs until shutdown() is called.
+        """
+        logger.info(f"Starting poller '{self.name}'...")
+        try:
+            while not self._shutdown_event.is_set():
+                logger.debug("Polling for earnings data...")
+                
+                # 1. Fetch
+                all_events = await self._fetch_data()
 
-# ---------------------------------------------------------------------------
-# CLI usage
-# ---------------------------------------------------------------------------
+                # 2. Filter out events without necessary data
+                valid_events = [
+                    e for e in all_events 
+                    if e.eps_estimate is not None and not math.isnan(e.eps_estimate)
+                ]
 
-if __name__ == "__main__":  # pragma: no cover – manual usage
-   poller = YahooEarningsPoller()
-   poller.run()
-
+                # 3. Persist new events and get them back
+                if valid_events:
+                    newly_persisted = await self._filter_and_persist_new(valid_events)
+                    if newly_persisted:
+                        logger.info(f"Found {len(newly_persisted)} new earnings events.")
+                        # 4. Emit to sink
+                        await self._emit(newly_persisted)
+                
+                # 5. Wait for the next interval or shutdown signal
+                try:
+                    await asyncio.wait_for(
+                        self._shutdown_event.wait(), 
+                        timeout=self.config.polling_interval_seconds
+                    )
+                except asyncio.TimeoutError:
+                    continue  # Timeout occurred, loop again
         
+        except asyncio.CancelledError:
+            logger.info(f"Poller '{self.name}' run task was cancelled.")
+        finally:
+            logger.info(f"Shutting down poller '{self.name}'.")
+            if self.db_conn:
+                await asyncio.to_thread(self.db_conn.close)
+
+    def shutdown(self) -> None:
+        """Signals the poller to gracefully shut down."""
+        logger.info(f"Shutdown signal received for poller '{self.name}'.")
+        self._shutdown_event.set()
 
 
+# ---------------------------------------------------------------------------
+# Example CLI usage demonstrating the new async pattern
+# ---------------------------------------------------------------------------
 
+async def main():
+    """Example of how to run the poller."""
+    
+    # Example sink function (can be sync or async)
+    def my_simple_sink(poller_name: str, event: yf.EarningsEvent):
+        print(f"[{poller_name.upper()}] New Earning: {event.ticker} | EPS Est: {event.eps_estimate}")
+
+    poller = None
+    poller_task = None
+    try:
+        poller = await YahooEarningsPoller.create(interval=15)
+        poller.set_sink(my_simple_sink)
+        
+        # Run the poller as a task
+        poller_task = asyncio.create_task(poller.run())
+        
+        # In a real app, you might await other tasks or signals here.
+        # For this example, we'll just let it run for a minute.
+        print("Poller is running. Press Ctrl+C to stop.")
+        await asyncio.sleep(60)
+
+    except asyncio.CancelledError:
+        print("Main task cancelled.")
+    finally:
+        if poller:
+            poller.shutdown()
+        # Wait for the poller task to finish its cleanup
+        if poller_task and not poller_task.done():
+            await poller_task
+
+if __name__ == "__main__":
+    try:
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        print("\nExiting.")
