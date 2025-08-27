@@ -1,4 +1,4 @@
-"""Base classes for all pollers using template method pattern."""
+"""Reusable components for building web-based pollers."""
 from __future__ import annotations
 
 import os
@@ -18,6 +18,8 @@ from .poller_utils import build_session, filter_new_items
 from traider.platforms.cache import get_shared_cache
 import pandas as pd
 from traider.interfaces.cache import CacheInterface
+
+from .protocol import Poller, ItemT
 
 # Use find_dotenv to locate the nearest .env starting from the CWD and moving up
 # This is more reliable when poller modules live in nested sub-packages but are
@@ -82,7 +84,7 @@ class PollerConfig:
         )
 
 
-class BasePoller(ABC):
+class BasePoller(ABC, Poller[BaseItem]):
     """Abstract base class for all pollers implementing the template method pattern."""
     
     def __init__(
@@ -123,10 +125,18 @@ class BasePoller(ABC):
         # Optional sink to emit processed items to a downstream consumer
         self._sink: Callable[[str, BaseItem], None] | None = None
 
-    @abstractmethod
-    def get_poller_name(self) -> str:
+    @property
+    def name(self) -> str:
         """Return the name of this poller for logging."""
-        pass
+        return self.__class__.__name__
+
+    def set_sink(self, sink: Callable[[str, BaseItem], Any]) -> None:
+        """Register a sink callable to receive processed items."""
+        self._sink = sink
+
+    def run(self) -> None:
+        """Start the poller's main execution loop."""
+        self.run_polling_loop()
 
     @abstractmethod
     def fetch_data(self) -> Response | Dict[str, Any] | pd.DataFrame:
@@ -142,13 +152,6 @@ class BasePoller(ABC):
     def extract_article_text(self, item: BaseItem) -> str | None:
         """Extract full article text from an item's URL."""
         pass
-
-    def set_sink(self, sink: Callable) -> None:
-        """Register a sink callable to receive processed items.
-
-        The sink will be called with (poller_name, item) for each new item.
-        """
-        self._sink = sink
 
     def handle_new_items(self, new_items: List[BaseItem]) -> None:
         """Process and display new items."""
@@ -176,7 +179,7 @@ class BasePoller(ABC):
             # Emit to sink if configured
             if self._sink is not None:
                 try:
-                    self._sink(self.get_poller_name(), item)
+                    self._sink(self.name, item)
                 except Exception as sink_exc:
                     logger.exception("[SINK] Error while emitting item: %s", sink_exc)
 
@@ -187,7 +190,7 @@ class BasePoller(ABC):
     def handle_error(self, exc: Exception) -> None:
         """Handle errors during polling."""
         if isinstance(exc, requests.exceptions.RequestException):
-            logger.error("Could not connect to %s. %s", self.get_poller_name(), exc, exc_info=exc)
+            logger.error("Could not connect to %s. %s", self.name, exc, exc_info=exc)
         else:
             logger.error("An unexpected error occurred: %s", exc, exc_info=exc)
         
@@ -200,23 +203,22 @@ class BasePoller(ABC):
         except Exception:
             return None
 
-    def print_startup_info(self) -> None:
-        """Log startup information."""
-        logger.debug("Starting %s Poller...", self.get_poller_name())
-        logger.debug(
-            "Polling interval: %ds | User-Agent: %s | Min request interval: %.3fs | Jitter: ±%d%%",
-            self.config.polling_interval_seconds,
-            self.config.user_agent,
-            self.config.min_request_interval_sec,
-            int(self.config.jitter_fraction * 100),
-        )
+    # def print_startup_info(self) -> None:
+    #     """Log startup information."""
+    #     logger.debug("Starting %s Poller...", self.name)
+    #     logger.debug(
+    #         "Polling interval: %ds | User-Agent: %s | Min request interval: %.3fs | Jitter: ±%d%%",
+    #         self.config.polling_interval_seconds,
+    #         self.config.user_agent,
+    #         self.config.min_request_interval_sec,
+    #         int(self.config.jitter_fraction * 100),
+    #     )
 
-        if "example.com" in self.config.user_agent:
-            logger.warning("Your User-Agent appears to be a placeholder. Consider setting a real contact.")
+    #     if "example.com" in self.config.user_agent:
+    #         logger.warning("Your User-Agent appears to be a placeholder. Consider setting a real contact.")
 
     def run_polling_loop(self) -> None:
         """Main polling loop using template method pattern."""
-        self.print_startup_info()
         
         while True:
             new_items: List[BaseItem] = []
@@ -239,17 +241,3 @@ class BasePoller(ABC):
             jitter = 1.0 + random.uniform(-self.config.jitter_fraction, self.config.jitter_fraction)
             sleep_for = max(1.0, self.current_interval * jitter)
             time.sleep(sleep_for)
-
-    def run(
-        self,
-        polling_interval_seconds: Optional[int] = None,
-        user_agent: Optional[str] = None,
-    ) -> None:
-        """Run the poller with optional parameter overrides."""
-        if polling_interval_seconds is not None:
-            self.config.polling_interval_seconds = polling_interval_seconds
-            self.current_interval = float(polling_interval_seconds)
-        if user_agent is not None:
-            self.config.user_agent = user_agent
-            
-        self.run_polling_loop()
