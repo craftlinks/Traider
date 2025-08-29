@@ -38,13 +38,13 @@ async def _initialize_session() -> None:
     if _session is not None:
         return  # idempotent
 
-    _session = httpx.AsyncClient()
+    _session = httpx.AsyncClient(follow_redirects=True)
     _session.headers.update({"User-Agent": _USER_AGENT})
 
     cookie, crumb = await _fetch_cookie_and_crumb(_session)
     if cookie and crumb:
         _cookie, _crumb = cookie, crumb
-        logger.info("Successfully obtained Yahoo crumb: %s", crumb)
+        logger.debug("Successfully obtained Yahoo crumb: %s", crumb)
     else:
         await _session.aclose()
         _session = None  # reset so callers can retry

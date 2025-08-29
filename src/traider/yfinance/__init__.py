@@ -9,6 +9,7 @@ from ._api import (
     get_earnings,
     get_earnings_for_date_range,
     get_press_releases,
+    get_latest_press_release,
     get_press_release_content,
 )
 
@@ -20,6 +21,7 @@ __all__ = [
     "get_earnings",
     "get_earnings_for_date_range",
     "get_press_releases",
+    "get_latest_press_release",
     "get_press_release_content",
 
     # --- Public Dataclasses (Return Types) ---

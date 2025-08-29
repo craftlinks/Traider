@@ -1,4 +1,6 @@
 from __future__ import annotations
+from ast import List
+import asyncio
 
 """Quick manual test to verify YahooFinance.get_press_releases().
 
@@ -10,30 +12,32 @@ import argparse
 
 from dataclasses import asdict
 import logging
+from pathlib import Path
 
-from traider.platforms.yahoo.main import YahooFinance, PressRelease
+import traider.yfinance as yf
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
+logging.getLogger("httpx").setLevel(logging.WARNING)
 
-def main() -> None:
+
+async def main() -> None:
     parser = argparse.ArgumentParser(description="Fetch latest Yahoo Finance press release for a ticker.")
     parser.add_argument("ticker", nargs="?", default="SMTC", help="Stock ticker symbol (default: SMTC)")
 
     args = parser.parse_args()
 
     ticker = args.ticker.upper()
-    yf = YahooFinance()
-    pr: PressRelease | None = yf.get_press_releases(ticker, type="press_release")
+    pr: yf.PressRelease | None = await yf.get_latest_press_release(ticker)
 
     if pr is None:
-        logger.info("No press release returned for %s", ticker)
+        logger.debug("No press release returned for %s", ticker)
     else:
         # Pretty-print dataclass as dict
         logger.info("Latest press release for %s:\n%s", ticker, asdict(pr))
 
         # --- Fetch the article body ----------------------------------------------------
-        html_body: str = yf.get_press_release_content(pr.url)
+        html_body: str = await yf.get_press_release_content(pr.url)
 
         snippet_len = 500  # show only a small preview in the console
         preview = (html_body[:snippet_len] + "…") if len(html_body) > snippet_len else html_body
@@ -49,4 +53,4 @@ def main() -> None:
             logger.error("Failed to save HTML to %s: %s", out_path, io_exc)
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(main())

@@ -167,7 +167,7 @@ async def get_earnings_for_date_range(start_date: date, end_date: date, *, as_da
 # Public API – press releases
 # ---------------------------------------------------------------------------
 
-async def get_press_releases(ticker: str, *, type: str, limit: int = 250) -> list[PressRelease]:  # noqa: A002 – type parameter is Yahoo nomenclature
+async def get_press_releases(ticker: str, *, type: str, limit: int = 250) -> list[PressRelease]:
     """Return up to *limit* press releases for *ticker*.
 
     The Yahoo Finance *NCP* endpoint does not offer traditional pagination.  The
@@ -239,6 +239,11 @@ async def get_press_releases(ticker: str, *, type: str, limit: int = 250) -> lis
             break
 
     return releases
+
+async def get_latest_press_release(ticker: str) -> PressRelease | None:
+    """Return the latest press release for *ticker*."""
+    releases = await get_press_releases(ticker, type="press_release")
+    return releases[0] if releases else None
 
 # ---------------------------------------------------------------------------
 # Public API – press‐release content & persistence
