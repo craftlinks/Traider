@@ -74,11 +74,8 @@ class YahooEarningsPoller(Poller[yf.EarningsEvent]):
         Asynchronously fetch earnings data for the configured date.
         """
         try:
-            events = await yf.get_earnings(self.poll_date, as_dataframe=False)
-            
-            # The as_dataframe=False should ensure this is a list,
-            # but we ignore to satisfy the linter.
-            return events or [] # type: ignore
+            events = await yf.get_earnings(self.poll_date)
+            return events or []
         except Exception:
             logger.exception("Failed to fetch earnings data from Yahoo Finance.")
             return []

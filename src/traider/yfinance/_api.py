@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from datetime import date, timedelta
 import logging
-import time
 from typing import List
 from urllib.parse import quote_plus
 import asyncio
@@ -163,7 +162,7 @@ async def get_earnings_for_date_range(start_date: date, end_date: date, *, as_da
     events: list[EarningsEvent] = []
 
     for day in date_range:
-        res = await get_earnings(day, as_dataframe=as_dataframe)
+        res = await get_earnings(day)
         if as_dataframe and isinstance(res, pd.DataFrame) and not res.empty:
             dfs.append(res)
         elif not as_dataframe and isinstance(res, list):
