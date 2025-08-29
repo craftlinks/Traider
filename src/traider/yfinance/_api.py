@@ -83,7 +83,7 @@ async def get_profile(ticker: str, *, from_json: bool = False) -> Profile:
 # Public API – earnings
 # ---------------------------------------------------------------------------
 
-async def get_earnings(start_date: date, *, as_dataframe: bool = True, max_retries: int = 3) -> pd.DataFrame | List[EarningsEvent]:
+async def get_earnings(start_date: date, *, max_retries: int = 3) -> List[EarningsEvent]:
     date_str = start_date.strftime("%Y-%m-%d")
     logger.debug("Fetching earnings for %s", date_str)
 
@@ -138,7 +138,7 @@ async def get_earnings(start_date: date, *, as_dataframe: bool = True, max_retri
             )
             resp.raise_for_status()
             df = _extract_earnings_data_json(resp.json())
-            return df if as_dataframe else _df_to_events(df)
+            return _df_to_events(df)
         except httpx.RequestError as exc:
             logger.error("Network error contacting Yahoo (%d/%d): %s", attempt + 1, max_retries, exc)
         except Exception as exc:  # pragma: no cover – parse errors, etc.
@@ -151,7 +151,7 @@ async def get_earnings(start_date: date, *, as_dataframe: bool = True, max_retri
                 logger.error("Failed to refresh Yahoo crumb – aborting: %s", refresh_exc)
                 break
 
-    return pd.DataFrame() if as_dataframe else []
+    return []
 
 
 # Convenience wrapper for multiple days ---------------------------------------------------
