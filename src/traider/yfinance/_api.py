@@ -14,7 +14,16 @@ import httpx
 from bs4 import BeautifulSoup
 
 from ._constants import _USER_AGENT, _YF_PROFILE_TEMPLATE, _YF_PROFILE_JSON_TEMPLATE, YF_VISUALIZATION_API, _REQUEST_DELAY_S
-from ._helpers import _refresh_cookie_and_crumb, _get_session, _extract_profile_data_json, _extract_profile_data_html, _extract_earnings_data_json, _df_to_events, _initialize_session, _crumb, _cookie
+from ._helpers import (
+    _refresh_cookie_and_crumb,
+    _get_session,
+    _extract_profile_data_json,
+    _extract_profile_data_html,
+    _extract_earnings_data_json,
+    _df_to_events,
+    _initialize_session,
+    Y_STATE,
+)
 from ._models import Profile, EarningsEvent, PressRelease
 
 # ---------------------------------------------------------------------------
@@ -80,11 +89,12 @@ async def get_earnings(start_date: date, *, as_dataframe: bool = True, max_retri
 
     for attempt in range(max_retries + 1):
         try:
+            session = await _get_session()
             if attempt > 0:
                 await asyncio.sleep(2 ** attempt)
                 logger.debug("Retry %d/%d for %s", attempt, max_retries, date_str)
 
-            api_url = YF_VISUALIZATION_API.format(crumb=quote_plus(_crumb))  # type: ignore[arg-type]
+            api_url = YF_VISUALIZATION_API.format(crumb=quote_plus(Y_STATE.crumb or ""))  # type: ignore[arg-type]
             next_day = (start_date + timedelta(days=1)).strftime("%Y-%m-%d")
             payload = {
                 "offset": 0,
@@ -119,13 +129,12 @@ async def get_earnings(start_date: date, *, as_dataframe: bool = True, max_retri
                     ],
                 },
             }
-            session = await _get_session()
             resp = await session.post(
                 api_url,
                 json=payload,
                 timeout=30,
-                headers={"x-crumb": _crumb or "", "User-Agent": _USER_AGENT},
-                cookies={_cookie.name: str(_cookie.value)} if _cookie else None,  # type: ignore[arg-type]
+                headers={"x-crumb": Y_STATE.crumb or "", "User-Agent": _USER_AGENT},
+                cookies={Y_STATE.cookie.name: str(Y_STATE.cookie.value)} if Y_STATE.cookie else None,  # type: ignore[arg-type]
             )
             resp.raise_for_status()
             df = _extract_earnings_data_json(resp.json())
@@ -202,7 +211,7 @@ async def get_press_releases(ticker: str, *, type: str, limit: int = 250) -> lis
                 params=params,
                 json=payload,
                 headers=headers,
-                cookies={_cookie.name: str(_cookie.value)} if _cookie else None,  # type: ignore[arg-type]
+                cookies={Y_STATE.cookie.name: str(Y_STATE.cookie.value)} if Y_STATE.cookie else None,  # type: ignore[arg-type]
                 timeout=20,
             )
             resp.raise_for_status()
@@ -268,7 +277,7 @@ async def get_press_release_content(url: str) -> str:
         resp = await session.get(
             url,
             headers=headers,
-            cookies={_cookie.name: str(_cookie.value)} if _cookie else None,  # type: ignore[arg-type]
+            cookies={Y_STATE.cookie.name: str(Y_STATE.cookie.value)} if Y_STATE.cookie else None,  # type: ignore[arg-type]
             timeout=20,
         )
         resp.raise_for_status()

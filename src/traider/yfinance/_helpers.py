@@ -14,14 +14,20 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 # Module level mutable state – *private*
 # ---------------------------------------------------------------------------
-_session: Optional[httpx.AsyncClient] = None
-_crumb: Optional[str] = None
-_cookie: Optional[Any] = None  # "Any" because requests.cookies.Cookie is private
+# Using a singleton to bundle mutable connection state.
+from types import SimpleNamespace
 
+
+class _YahooState(SimpleNamespace):
+    session: Optional[httpx.AsyncClient] = None
+    cookie: Optional[Any] = None
+    crumb: Optional[str] = None
+
+
+Y_STATE = _YahooState()
 
 # ---------------------------------------------------------------------------
 # Helper functions
-# ---------------------------------------------------------------------------
 
 def _to_float(val: Any) -> float:
     """Best-effort conversion to *float* returning ``nan`` on failure."""
@@ -34,27 +40,26 @@ def _to_float(val: Any) -> float:
 
 async def _initialize_session() -> None:
     """Internal logic for creating the session and fetching the crumb."""
-    global _session, _crumb, _cookie
-    if _session is not None:
+    if Y_STATE.session is not None:
         return  # idempotent
+# Create client
+    Y_STATE.session = httpx.AsyncClient(follow_redirects=True)
+    Y_STATE.session.headers.update({"User-Agent": _USER_AGENT})
 
-    _session = httpx.AsyncClient(follow_redirects=True)
-    _session.headers.update({"User-Agent": _USER_AGENT})
-
-    cookie, crumb = await _fetch_cookie_and_crumb(_session)
+    cookie, crumb = await _fetch_cookie_and_crumb(Y_STATE.session)
     if cookie and crumb:
-        _cookie, _crumb = cookie, crumb
+        Y_STATE.cookie, Y_STATE.crumb = cookie, crumb
         logger.debug("Successfully obtained Yahoo crumb: %s", crumb)
     else:
-        await _session.aclose()
-        _session = None  # reset so callers can retry
+        await Y_STATE.session.aclose()
+        Y_STATE.session = None
         raise RuntimeError("Unable to obtain Yahoo crumb token.")
 
 async def _get_session() -> httpx.AsyncClient:
-    if _session is None:
+    if Y_STATE.session is None:
         logger.debug("Lazy-initialising Yahoo Finance session …")
         await _initialize_session()
-    return _session  # type: ignore[return-value]
+    return Y_STATE.session  # type: ignore[return-value]
 
 # ---------------------------------------------------------------------------
 # Private helpers – cookie / crumb handling
@@ -87,16 +92,21 @@ async def _fetch_cookie_and_crumb(session: httpx.AsyncClient, *, timeout: int = 
 
 
 async def _refresh_cookie_and_crumb() -> None:
-    global _cookie, _crumb, _session
-    if _session is None:
-        raise RuntimeError("Session not initialised – call initialize() first.")
-
-    cookie, crumb = await _fetch_cookie_and_crumb(_session)
+    if Y_STATE.session is None:
+        await _initialize_session()
+        return
+    cookie, crumb = await _fetch_cookie_and_crumb(Y_STATE.session)
     if cookie and crumb:
-        _cookie, _crumb = cookie, crumb
-        logger.info("Successfully refreshed Yahoo crumb: %s", crumb)
+        Y_STATE.cookie, Y_STATE.crumb = cookie, crumb
+        logger.debug("Successfully refreshed Yahoo crumb: %s", crumb)
     else:
-        raise RuntimeError("Unable to refresh Yahoo crumb token.")
+        logger.warning("Failed to refresh crumb with existing session, re-initializing.")
+        try:
+            await Y_STATE.session.aclose()
+        except Exception:
+            pass
+        Y_STATE.session = None
+        await _initialize_session()
 
 # ---------------------------------------------------------------------------
 # Internal helpers (dataframe → dataclass etc.)
