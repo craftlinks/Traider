@@ -4,6 +4,7 @@ import logging
 # typing imports
 # ---------------------------------------------------------------------------
 from typing import Callable, Optional, Any, Coroutine, cast
+from typing import Tuple
 
 from .protocol import MessageBroker
 from .channels import Channel
@@ -14,6 +15,7 @@ logger = logging.getLogger(__name__)
 # additional contextual parameters (shutdown_event, startup_barrier, ...).
 # It may return an optional message to be forwarded.
 MessageHandler = Callable[..., Coroutine[Any, Any, Optional[Any]]]
+ProducerHandler = Callable[..., Coroutine[Any, Any, Any]]
 
 class MessageRouter:
     """
@@ -23,34 +25,55 @@ class MessageRouter:
         self.broker = broker
         # Registry contains tuples of input channel, message handler(co-routine), and output channel(optional)
         self._registry: list[tuple[Channel, MessageHandler, Optional[Channel]]] = []
-        self._producers: list[Callable[..., Coroutine[Any, Any, Any]]] = []
+        self._producers: list[Tuple[ProducerHandler, Optional[Channel]]] = []
         self._shutdown_event: Optional[asyncio.Event] = None
         self._startup_barrier: Optional[asyncio.Barrier] = None
         self._extra_args: Any = ()
 
-    def route(self, listen_to: Channel, publish_to: Optional[Channel] = None) -> Callable[[MessageHandler], MessageHandler]:
-        """Decorator to register a function as a processing node in the data flow."""
-        def decorator(func: MessageHandler) -> MessageHandler:
-            self._registry.append((listen_to, func, publish_to))
-            return func
-        return decorator
+    # ------------------------------------------------------------------
+    # Public helpers
+    # ------------------------------------------------------------------
 
-    # ---------------------------------------------------------------------
-    # Producer decorator
-    # ---------------------------------------------------------------------
+    @property
+    def worker_count(self) -> int:
+        """Number of subscriber workers registered (excluding producers)."""
 
-    def producer(self) -> Callable[[Callable[..., Coroutine[Any, Any, Any]]], Callable[..., Coroutine[Any, Any, Any]]]:
-        """Decorator to register an async function as a producer-only node.
+        return len(self._registry)
 
-        The decorated coroutine receives the broker as its first argument so it
-        can publish messages freely. Additional *extra_args, shutdown_event,
-        etc. are injected the same way as for normal handlers.
+    @property
+    def producer_count(self) -> int:
+        """Number of producer-only nodes registered."""
+
+        return len(self._producers)
+
+    @property
+    def node_count(self) -> int:
+        """Total number of nodes (workers + producers) managed by the router."""
+
+        return self.worker_count + self.producer_count
+
+    def route(
+        self,
+        listen_to: Optional[Channel] = None,
+        publish_to: Optional[Channel] = None,
+    ) -> Callable[[Callable[..., Coroutine[Any, Any, Any]]], Callable[..., Coroutine[Any, Any, Any]]]:
+        """Decorate a coroutine as a subscriber or producer.
+
+        • If *listen_to* is provided, the function is treated as a subscriber
+          (as before).
+        • If *listen_to* is None and *publish_to* is provided, the function is
+          treated as a producer-only node; its return value (if not None) will
+          be published to *publish_to*.
         """
 
         def decorator(func: Callable[..., Coroutine[Any, Any, Any]]):
-            self._producers.append(func)
+            if listen_to is None:
+                if publish_to is None:
+                    raise ValueError("Producer route requires publish_to channel")
+                self._producers.append((func, publish_to))
+            else:
+                self._registry.append((listen_to, func, publish_to))
             return func
-
         return decorator
 
     async def _run_worker(self, listen_to: Channel, handler: MessageHandler, publish_to: Optional[Channel]):
@@ -66,7 +89,7 @@ class MessageRouter:
                 else:
                     result = await handler(message, *self._extra_args)
                 if result is not None and publish_to is not None:
-                    await self.broker.publish(publish_to, cast(Any, result))
+                    await self.broker.publish(publish_to, result)
             except asyncio.TimeoutError:
                 # No message arrived within timeout. If a shutdown has been
                 # signalled, exit the worker.
@@ -90,7 +113,25 @@ class MessageRouter:
             # Start subscribers (workers)
             for listen_to, handler, publish_to in self._registry:
                 tg.create_task(self._run_worker(listen_to, handler, publish_to))
-
             # Start producers
-            for producer in self._producers:
-                tg.create_task(producer(self.broker, self._shutdown_event, *self._extra_args))
+            for producer, out_channel in self._producers:
+                tg.create_task(self._run_producer(producer, out_channel))
+
+    # ---------------------------------------------------------------------
+    # Internal helpers
+    # ---------------------------------------------------------------------
+
+    async def _run_producer(
+        self,
+        producer_fn: Callable[..., Coroutine[Any, Any, Any]],
+        publish_to: Optional[Channel],
+    ) -> None:
+        """Run a producer coroutine and forward its (non-None) result."""
+        result = await producer_fn(
+            self.broker,
+            self._shutdown_event,
+            self._startup_barrier,
+            *self._extra_args,
+        )
+        if result is not None and publish_to is not None:
+            await self.broker.publish(publish_to, result)

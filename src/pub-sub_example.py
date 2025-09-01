@@ -68,20 +68,18 @@ async def cpu_heavy_worker(event: EarningsEvent, shutdown_event: asyncio.Event) 
     return event
 
 
-async def earnings_producer(msg_broker: MessageBroker, shutdown_event: asyncio.Event, startup_barrier: asyncio.Barrier):
-    
-    await startup_barrier.wait()
-    
-    earnings_event_id = 1
-    
-    while not shutdown_event.is_set():
-        if earnings_event_id > MAX_EVENTS:
-            shutdown_event.set()
+@router.route(publish_to=Channel.EARNINGS)
+async def earnings_producer(broker: MessageBroker, shutdown_event: asyncio.Event, startup_barrier: asyncio.Barrier):
+    """Generate dummy earnings events until MAX_EVENTS then trigger shutdown."""
+
+    await startup_barrier.wait()  # Ensure all subscribers are ready
+
+    for event_id in range(1, MAX_EVENTS + 1):
+        if shutdown_event.is_set():
             break
-        
-        # get earnings from database
+
         earnings_event = EarningsEvent(
-            id=earnings_event_id,
+            id=event_id,
             ticker="AAPL",
             company_name="Apple",
             event_name="Earnings",
@@ -94,11 +92,10 @@ async def earnings_producer(msg_broker: MessageBroker, shutdown_event: asyncio.E
             market_cap=1.0,
         )
 
-        await msg_broker.publish(Channel.EARNINGS, earnings_event)
-
-        earnings_event_id += 1
+        await broker.publish(Channel.EARNINGS, earnings_event)
         await asyncio.sleep(1)
 
+    shutdown_event.set()
     logging.debug("Producer shutting down...")
 
 
@@ -121,13 +118,12 @@ async def main() -> None:
     process_pool_global = ProcessPoolExecutor(max_workers=cpu_cores)
 
 
-    # The barrier must account for all worker coroutines plus the producer itself.
-    worker_count = len(router._registry)  # protected attr acceptable for example
-    startup_barrier = asyncio.Barrier(parties=worker_count + 1)
+    # Barrier must cover subscribers + producers
+    worker_count = router.node_count
+    startup_barrier = asyncio.Barrier(parties=worker_count)
 
     async with asyncio.TaskGroup() as tg:
         tg.create_task(router.run(shutdown_event, startup_barrier))
-        tg.create_task(earnings_producer(msg_broker, shutdown_event, startup_barrier))
 
     # Clean-up once all tasks are done.
     process_pool_global.shutdown(wait=True)
