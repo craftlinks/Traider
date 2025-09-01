@@ -1,117 +1,71 @@
 import asyncio
-from collections import defaultdict
+# ---------------------------------------------------------------------------
+# Standard library imports
+# ---------------------------------------------------------------------------
 from concurrent.futures import ProcessPoolExecutor
 from datetime import datetime
-from enum import Enum
-import inspect
 import os
 import pprint
 import signal
 import time
-from typing import Any, Awaitable, Callable, Literal, Protocol, TypeVar, overload
+from typing import Any, Optional
 
-from traider.yfinance import EarningsEvent, PressRelease
+from traider.yfinance import EarningsEvent
+# Use the shared message-bus infrastructure
+from traider.messagebus.channels import Channel
+from traider.messagebus.protocol import MessageBroker
+from traider.messagebus.brokers.memory import InMemoryBroker
+from traider.messagebus.router import MessageRouter
 
 import logging
 logging.basicConfig(level=logging.INFO)
 
 MAX_EVENTS = 5
 
-class Channel(str, Enum):
-    EARNINGS = "earnings"
-    PRESS_RELEASE = "press_release"
-
-
-class MessageBroker(Protocol):
-    
-    @overload
-    async def publish(self, channel_name: Literal[Channel.EARNINGS], message: EarningsEvent) -> None:
-        ...
-
-    @overload
-    async def publish(self, channel_name: Literal[Channel.PRESS_RELEASE], message: PressRelease) -> None:
-        ...
-
-
-    @overload
-    async def subscribe(self, channel_name: Literal[Channel.EARNINGS]) -> asyncio.Queue[EarningsEvent]:
-        ...
-
-    @overload
-    async def subscribe(self, channel_name: Literal[Channel.PRESS_RELEASE]) -> asyncio.Queue[PressRelease]:
-        ...
-
-    async def publish(self, channel_name: Channel, message: Any) -> None:
-        ...
-
-    async def subscribe(self, channel_name: Channel) -> asyncio.Queue[Any]:
-        ...
-
-    def unsubscribe(self, channel_name: Channel, queue: asyncio.Queue[Any]) -> None:
-        ...
-
-
-class InMemoryBroker(MessageBroker):
-    def __init__(self):
-        self.channels = defaultdict(list[asyncio.Queue[Any]])
-    
-    async def publish(self, channel_name: Channel, message: Any) -> None:
-        for queue in self.channels[channel_name]:
-            await queue.put(message)
-        
-    async def subscribe(self, channel_name: Channel) -> asyncio.Queue[Any]:
-       queue = asyncio.Queue()
-       self.channels[channel_name].append(queue)
-       return queue
-    
-    def unsubscribe(self, channel_name: Channel, queue: asyncio.Queue[Any]) -> None:
-        if queue in self.channels[channel_name]:
-            self.channels[channel_name].remove(queue)
-
-async def worker_loop(worker_name: str, queue: asyncio.Queue[Any], shutdown_event: asyncio.Event, worker_fn: Callable[[Any], Awaitable[None]]):
-    while True:
-        try:
-            message = await asyncio.wait_for(queue.get(), timeout=1)
-            await worker_fn(message)
-        except asyncio.TimeoutError:
-            # Queue is empty, check if we should shutdown
-            if shutdown_event.is_set():
-                logging.debug(f"Shutting down {worker_name}...")
-                break
-            continue
-
-def _cpu_bound_worker_fn(message: EarningsEvent) -> bool:
+def _cpu_bound_worker_fn(message: EarningsEvent) -> None:
     pprint.pprint(
         f"worker 2: Also received earnings event {message.id} for company: {message.company_name}"
     )
     time.sleep(2)
-    return message.id > MAX_EVENTS
+    return None
 
 
-async def cpu_bound_worker_1(
-    process_pool: ProcessPoolExecutor,
-    broker: MessageBroker,
-    shutdown_event: asyncio.Event,
-    startup_barrier: asyncio.Barrier,
-):
-    """Delegates events to the CPU-bound process pool."""
-    queue = await broker.subscribe(Channel.EARNINGS)
+# ---------------------------------------------------------------------------
+# Message-bus router and worker definitions
+# ---------------------------------------------------------------------------
 
-    await startup_barrier.wait()
 
+msg_broker: MessageBroker = InMemoryBroker()
+router = MessageRouter(msg_broker)
+
+# A global process pool for CPU-bound work – will be initialised in main().
+process_pool_global: ProcessPoolExecutor | None = None
+
+
+@router.route(listen_to=Channel.EARNINGS)
+async def press_release_worker(event: EarningsEvent, shutdown_event: asyncio.Event) -> EarningsEvent | None:
+    """Kick off a poller to retrieve the press-release that follows *event*."""
+
+    pprint.pprint(f"[press_release_worker] Triggering poller for {event.company_name}")
+    # simulate background task
+    asyncio.create_task(earnings_press_release_poller(event.company_name, event.ticker, shutdown_event))
+
+    # Example of reacting to global shutdown
+    if shutdown_event.is_set():
+        return None
+    return None
+
+
+@router.route(listen_to=Channel.EARNINGS)
+async def cpu_heavy_worker(event: EarningsEvent, shutdown_event: asyncio.Event) -> EarningsEvent | None:
+    """Handle CPU-bound work in a separate process pool."""
+
+    assert process_pool_global is not None  # Should be initialised in *main*.
     loop = asyncio.get_running_loop()
-
-    async def process_event(event: Any):
-        should_unsubscribe = await loop.run_in_executor(process_pool, _cpu_bound_worker_fn, event)
-        # Check if shutdown was triggered while we were blocked in the executor
-        if shutdown_event.is_set():
-            logging.debug(f"[CPU-MANAGER] Shutdown triggered. Discarding result.")
-            return
-
-        if should_unsubscribe:
-            broker.unsubscribe(Channel.EARNINGS, queue)
-
-    await worker_loop("cpu_bound_worker_1", queue, shutdown_event, process_event)
+    await loop.run_in_executor(process_pool_global, _cpu_bound_worker_fn, event)
+    if shutdown_event.is_set():
+        return None
+    return event
 
 
 async def earnings_producer(msg_broker: MessageBroker, shutdown_event: asyncio.Event, startup_barrier: asyncio.Barrier):
@@ -148,49 +102,36 @@ async def earnings_producer(msg_broker: MessageBroker, shutdown_event: asyncio.E
     logging.debug("Producer shutting down...")
 
 
-async def earnings_press_release_poller(company_name: str, ticker: str):
+async def earnings_press_release_poller(company_name: str, ticker: str, shutdown_event: asyncio.Event):
     pass
 
 
-async def start_earnings_press_release_poller(msg_broker: MessageBroker, shutdown_event: asyncio.Event, startup_barrier: asyncio.Barrier):
-    
-    queue = await msg_broker.subscribe(Channel.EARNINGS)
+async def main() -> None:
 
-    await startup_barrier.wait()
-    
-    async def worker_fn(message: EarningsEvent):
-        pprint.pprint(f"worker 1: Received earnings event for {message.company_name}")
-        # start long running process to poll press release
-        asyncio.create_task(earnings_press_release_poller(message.company_name, message.ticker))
-        if message.id > MAX_EVENTS:
-            msg_broker.unsubscribe(Channel.EARNINGS, queue)
-            shutdown_event.set()
-            return
-        await asyncio.sleep(1)
-    
-    await worker_loop("press_release_worker_1", queue, shutdown_event, worker_fn)
+    global process_pool_global
 
-
-async def main():
-    
-    msg_broker = InMemoryBroker()
     shutdown_event = asyncio.Event()
-    startup_barrier = asyncio.Barrier(parties=3)
-    cpu_cores = os.cpu_count() or 1
-    
-    loop = asyncio.get_running_loop()
 
-    for sig in [signal.SIGINT, signal.SIGTERM]:
+    # Handle graceful shutdown via SIGINT / SIGTERM.
+    loop = asyncio.get_running_loop()
+    for sig in (signal.SIGINT, signal.SIGTERM):
         loop.add_signal_handler(sig, shutdown_event.set)
 
-    
-    with ProcessPoolExecutor(max_workers=cpu_cores) as process_pool:
-        await asyncio.gather(
-            earnings_producer(msg_broker, shutdown_event, startup_barrier),
-            press_release_producer(msg_broker, shutdown_event, startup_barrier),
-            cpu_bound_worker_1(process_pool, msg_broker, shutdown_event, startup_barrier)
-        )
-    
+    cpu_cores = os.cpu_count() or 1
+    process_pool_global = ProcessPoolExecutor(max_workers=cpu_cores)
+
+
+    # The barrier must account for all worker coroutines plus the producer itself.
+    worker_count = len(router._registry)  # protected attr acceptable for example
+    startup_barrier = asyncio.Barrier(parties=worker_count + 1)
+
+    async with asyncio.TaskGroup() as tg:
+        tg.create_task(router.run(shutdown_event, startup_barrier))
+        tg.create_task(earnings_producer(msg_broker, shutdown_event, startup_barrier))
+
+    # Clean-up once all tasks are done.
+    process_pool_global.shutdown(wait=True)
+
 
 if __name__ == "__main__":
     try:
