@@ -26,7 +26,7 @@ def _cpu_bound_worker_fn(message: EarningsEvent) -> None:
     pprint.pprint(
         f"worker 2: Also received earnings event {message.id} for company: {message.company_name}"
     )
-    time.sleep(2)
+    time.sleep(1)
     return None
 
 
@@ -127,6 +127,7 @@ async def main() -> None:
 
     # Clean-up once all tasks are done.
     process_pool_global.shutdown(wait=True)
+    logging.info("Main task complete")
 
 
 if __name__ == "__main__":
