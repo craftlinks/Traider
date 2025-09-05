@@ -2,6 +2,7 @@ import asyncio
 from datetime import date
 from enum import Enum
 from typing import Dict, Optional
+import httpx
 from traider.messagebus.protocol import MessageBroker
 from traider.messagebus.brokers.memory import InMemoryBroker
 from traider.messagebus.router import MessageRouter
@@ -25,6 +26,7 @@ for name in ("httpx", "httpcore", "LiteLLM"):
 load_dotenv()
 EARNINGS_PRODUCER_INTERVAL = 10
 PRESS_RELEASE_POLL_INTERVAL = 10
+
 
 # Track active polling tasks per ticker to avoid spawning duplicates
 earnings_polling_tasks: Dict[str, asyncio.Task] = {}
@@ -59,7 +61,7 @@ configure(lm=lm)
 
 class PressReleaseJudgement(Signature):
     """
-    Judgement if the article is an earnings report and whether it is a BUY or SELL judgement.
+    Judge whether the article is an earnings report and whether it is a BUY or SELL.
     If it is not an earnings report, return `is_earnings_report=False` and `judgement=''` and `judgement_score=0`.
     If it is an earnings report, return a score between -10 (SELL) and 10 (BUY) for the BUY or SELL judgement.
     """
@@ -103,44 +105,41 @@ async def earnings_producer(router: MessageRouter):
 # ---------------------------------------------------------------------------
 # Earnings Consumer
 # ---------------------------------------------------------------------------
+async def poll_for_press_release(router: MessageRouter, ticker: str):
+    logger.debug(f"Polling for press release for {ticker}")
+    while True:
+        try:
+            press_release: yf.PressRelease | None = await yf.get_latest_press_release(
+                ticker
+            )
+            # Compose a deterministic *key* from URL + publication date (hashing not necessary)
+            if press_release is not None:
+                id_ = f"{press_release.url}|{press_release.pub_date}"
+                # Skip duplicates using the LRU set (maintains max 10k ids)
+                if last_press_release_id.get(ticker) == id_:
+                    # Already seen -> skip
+                    logger.debug(
+                        "Press release %s for %s already processed – skipping",
+                        id_,
+                        ticker,
+                    )
+                else:
+                    # New ID – publish
+                    await router.broker.publish(Channel.PRESS_RELEASE, press_release)
+                    last_press_release_id[ticker] = id_
+        except Exception:
+            logger.exception("Error while polling press release for %s", ticker)
+
+        # Allow cancellation between polling cycles
+        try:
+            await asyncio.sleep(PRESS_RELEASE_POLL_INTERVAL)
+        except asyncio.CancelledError:
+            logger.debug("Polling task for %s cancelled", ticker)
+            raise
 
 
 @router.route(listen_to=Channel.EARNINGS)
 async def earnings_consumer(router: MessageRouter, earning: yf.EarningsEvent):
-    async def poll_for_press_release(router: MessageRouter, ticker: str):
-        logger.debug(f"Polling for press release for {ticker}")
-        while True:
-            try:
-                press_release: (
-                    yf.PressRelease | None
-                ) = await yf.get_latest_press_release(ticker)
-                # Compose a deterministic *key* from URL + publication date (hashing not necessary)
-                if press_release is not None:
-                    id_ = f"{press_release.url}|{press_release.pub_date}"
-                    # Skip duplicates using the LRU set (maintains max 10k ids)
-                    if last_press_release_id.get(ticker) == id_:
-                        # Already seen -> skip
-                        logger.debug(
-                            "Press release %s for %s already processed – skipping",
-                            id_,
-                            ticker,
-                        )
-                    else:
-                        # New ID – publish
-                        await router.broker.publish(
-                            Channel.PRESS_RELEASE, press_release
-                        )
-                        last_press_release_id[ticker] = id_
-            except Exception:
-                logger.exception("Error while polling press release for %s", ticker)
-
-            # Allow cancellation between polling cycles
-            try:
-                await asyncio.sleep(PRESS_RELEASE_POLL_INTERVAL)
-            except asyncio.CancelledError:
-                logger.debug("Polling task for %s cancelled", ticker)
-                raise
-
     logger.debug(
         f"Received earnings event for {earning.ticker} at {earning.earnings_call_time}"
     )
@@ -245,6 +244,20 @@ async def judge_press_release(router: MessageRouter, press_release: yf.PressRele
 # ---------------------------------------------------------------------------
 
 
+async def send_discord_message(message: str):
+    data = {"content": message}
+
+    # Retrieve the webhook URL once and validate its presence to satisfy type checkers
+    url = os.getenv("DISCORD_WEBHOOK_URL")
+    assert url is not None, (
+        "Environment variable 'DISCORD_WEBHOOK_URL' must be set and non‐empty."
+    )
+
+    async with httpx.AsyncClient() as client:
+        response = await client.post(url, json=data)
+        response.raise_for_status()
+
+
 @router.route(listen_to=Channel.LLM_EARNINGS_REPORT)
 async def publish_earnings_report(router: MessageRouter, judgement: dict):
     logger.debug(f"Publishing earnings report for {judgement['ticker']}")
@@ -253,6 +266,8 @@ async def publish_earnings_report(router: MessageRouter, judgement: dict):
         logger.info(
             f"{judgement['ticker']} SELL/BUY SCORE: {judgement['judgement'].judgement_score}"
         )
+        message = f"{judgement['ticker']} SELL/BUY SCORE: {judgement['judgement'].judgement_score}\n{judgement['judgement'].judgement}"
+        await send_discord_message(message)
     else:
         logger.debug(
             f"Press release for {judgement['ticker']} is not an earnings report"
