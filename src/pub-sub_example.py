@@ -22,12 +22,12 @@ import logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# def _cpu_bound_worker_fn(message: EarningsEvent) -> None:
-#     pprint.pprint(
-#         f"worker 2: Also received earnings event {message.id} for company: {message.company_name}"
-#     )
-#     time.sleep(1)
-#     return None
+def _cpu_bound_worker_fn(message: EarningsEvent) -> None:
+    logger.info(
+        f"Also received earnings event for company: {message.company_name}"
+    )
+    time.sleep(1)
+    return None
 
 
 # ---------------------------------------------------------------------------
@@ -84,16 +84,17 @@ async def press_release_worker(
     )
 
 
-# @router.route(listen_to=Channel.EARNINGS)
-# async def cpu_heavy_worker(event: EarningsEvent, shutdown_event: asyncio.Event) -> EarningsEvent | None:
-#     """Handle CPU-bound work in a separate process pool."""
+@msg_router.route(listen_to=Channel.EARNINGS, ttl=30)
+async def cpu_heavy_worker(
+    router: MessageRouter,
+    event: EarningsEvent,
+) -> EarningsEvent | None:
+    """Handle CPU-bound work in a separate process pool."""
 
-#     assert process_pool_global is not None  # Should be initialised in *main*.
-#     loop = asyncio.get_running_loop()
-#     await loop.run_in_executor(process_pool_global, _cpu_bound_worker_fn, event)
-#     if shutdown_event.is_set():
-#         return None
-#     return event
+    assert process_pool_global is not None  # Should be initialised in *main*.
+    loop = asyncio.get_running_loop()
+    await loop.run_in_executor(process_pool_global, _cpu_bound_worker_fn, event)
+    return event
 
 
 @msg_router.route(publish_to=Channel.EARNINGS, ttl=5)
@@ -157,8 +158,8 @@ async def main() -> None:
 
     global process_pool_global
 
-    # cpu_cores = os.cpu_count() or 1
-    # process_pool_global = ProcessPoolExecutor(max_workers=cpu_cores)
+    cpu_cores = os.cpu_count() or 1
+    process_pool_global = ProcessPoolExecutor(max_workers=cpu_cores)
 
 
     async with asyncio.TaskGroup() as tg:
