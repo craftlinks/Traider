@@ -29,6 +29,10 @@ class MessageRouter:
         self._shutdown_event: Optional[asyncio.Event] = None
         self._startup_barrier: Optional[asyncio.Barrier] = None
         self._extra_args: Any = ()
+        # Reference to the TaskGroup created in `run()`. This allows workers
+        # to spawn additional background tasks that will be tied to the same
+        # lifecycle (i.e. they are cancelled automatically on shutdown).
+        self._tg: Optional[asyncio.TaskGroup] = None
 
     # ------------------------------------------------------------------
     # Public helpers
@@ -110,12 +114,42 @@ class MessageRouter:
             logger.warning("No routes registered. Nothing to do.")
             return
         async with asyncio.TaskGroup() as tg:
+            # Expose the TaskGroup so that workers/producers can create
+            # child-tasks that are properly supervised.
+            self._tg = tg
+
             # Start subscribers (workers)
             for listen_to, handler, publish_to in self._registry:
                 tg.create_task(self._run_worker(listen_to, handler, publish_to))
             # Start producers
             for producer, out_channel in self._producers:
                 tg.create_task(self._run_producer(producer, out_channel))
+
+        # Clear reference once the TaskGroup exits (either normally or via error)
+        self._tg = None
+
+    # ------------------------------------------------------------------
+    # Public API for dynamic task creation
+    # ------------------------------------------------------------------
+
+    def spawn_task(self, coro: Coroutine[Any, Any, Any]) -> asyncio.Task[Any]:
+        """Schedule *coro* inside the router's TaskGroup.
+
+        Workers/producers can call this method to start additional background
+        coroutines that should share the router's lifetime.  The returned
+        asyncio.Task will be cancelled automatically when the router shuts
+        down.
+
+        Raises
+        ------
+        RuntimeError
+            If the router is not currently running (i.e. no TaskGroup).
+        """
+
+        if self._tg is None:
+            raise RuntimeError("MessageRouter is not running – cannot spawn tasks")
+
+        return self._tg.create_task(coro)
 
     # ---------------------------------------------------------------------
     # Internal helpers
