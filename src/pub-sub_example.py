@@ -7,15 +7,12 @@ from datetime import datetime
 import os
 import pprint
 import random
-import signal
 import time
-from typing import Any, Optional
 import uuid
 
 # Models
 from traider.yfinance._models import PressRelease
 from traider.yfinance import EarningsEvent
-# Use the shared message-bus infrastructure
 from traider.messagebus.channels import Channel
 from traider.messagebus.protocol import MessageBroker
 from traider.messagebus.brokers.memory import InMemoryBroker
@@ -24,12 +21,12 @@ from traider.messagebus.router import MessageRouter
 import logging
 logging.basicConfig(level=logging.INFO)
 
-def _cpu_bound_worker_fn(message: EarningsEvent) -> None:
-    pprint.pprint(
-        f"worker 2: Also received earnings event {message.id} for company: {message.company_name}"
-    )
-    time.sleep(1)
-    return None
+# def _cpu_bound_worker_fn(message: EarningsEvent) -> None:
+#     pprint.pprint(
+#         f"worker 2: Also received earnings event {message.id} for company: {message.company_name}"
+#     )
+#     time.sleep(1)
+#     return None
 
 
 # ---------------------------------------------------------------------------
@@ -38,7 +35,7 @@ def _cpu_bound_worker_fn(message: EarningsEvent) -> None:
 
 
 msg_broker: MessageBroker = InMemoryBroker()
-router = MessageRouter(msg_broker)
+msg_router = MessageRouter(msg_broker)
 
 # ---------------------------------------------------------------------------
 # Channel listeners
@@ -49,21 +46,23 @@ router = MessageRouter(msg_broker)
 process_pool_global: ProcessPoolExecutor | None = None
 
 
-@router.route(listen_to=Channel.EARNINGS)
-async def earnings_sink(event: EarningsEvent, shutdown_event: asyncio.Event) -> EarningsEvent | None:
+@msg_router.route(listen_to=Channel.EARNINGS)
+async def earnings_sink(
+    router: MessageRouter,
+    event: EarningsEvent,
+) -> EarningsEvent | None:
     """Kick off a poller to retrieve the press-release that follows *event*."""
 
     pprint.pprint(f"[earnings_sink] Triggering poller for {event.company_name}")
     # Start a background poller that will automatically be cancelled when the
     # router shuts down because it is spawned via `router.spawn_task`.
     router.spawn_task(
-        earnings_press_release_poller(msg_broker, event.company_name, event.ticker, shutdown_event)
+        earnings_press_release_poller(
+            router,
+            event.company_name,
+            event.ticker,
+        )
     )
-
-    # Example of reacting to global shutdown
-    if shutdown_event.is_set():
-        return None
-    return None
 
 
 #--------------------------------------------------------------------
@@ -71,16 +70,16 @@ async def earnings_sink(event: EarningsEvent, shutdown_event: asyncio.Event) -> 
 #--------------------------------------------------------------------
 
 
-@router.route(listen_to=Channel.PRESS_RELEASE)
-async def press_release_worker(message: PressRelease, shutdown_event: asyncio.Event) -> None:
+@msg_router.route(listen_to=Channel.PRESS_RELEASE)
+async def press_release_worker(
+    router: MessageRouter,
+    message: PressRelease,
+) -> None:
     """Process a press-release once it has been published."""
 
     pprint.pprint(
         f"[press_release_worker] Received press release for {message.ticker} — {message.title}"
     )
-    # Demonstrate awareness of shutdown
-    if shutdown_event.is_set():
-        return None
 
 
 # @router.route(listen_to=Channel.EARNINGS)
@@ -95,15 +94,13 @@ async def press_release_worker(message: PressRelease, shutdown_event: asyncio.Ev
 #     return event
 
 
-@router.route(publish_to=Channel.EARNINGS)
-async def earnings_producer(broker: MessageBroker, shutdown_event: asyncio.Event, startup_barrier: asyncio.Barrier):
-    """Generate dummy earnings events until MAX_EVENTS then trigger shutdown."""
+@msg_router.route(publish_to=Channel.EARNINGS)
+async def earnings_producer(router: MessageRouter):
+    """Generate dummy earnings events."""
 
-    await startup_barrier.wait()  # Ensure all subscribers are ready
+    await router.wait_until_ready()  # Ensure all listeners are ready
 
     for ticker in ["AAPL", "MSFT", "GOOG", "AMZN"]:
-        if shutdown_event.is_set():
-            break
 
         earnings_event = EarningsEvent(
             id=uuid.uuid4().int,
@@ -119,27 +116,25 @@ async def earnings_producer(broker: MessageBroker, shutdown_event: asyncio.Event
             market_cap=random.random() * 1000000000,
         )
 
-        await broker.publish(Channel.EARNINGS, earnings_event)
+        await router.broker.publish(Channel.EARNINGS, earnings_event)
         await asyncio.sleep(1)
 
-    # shutdown_event.set()
-    # logging.debug("Producer shutting down...")
 
-
-async def earnings_press_release_poller(broker: MessageBroker, company_name: str, ticker: str, shutdown_event: asyncio.Event):
+async def earnings_press_release_poller(
+    router: MessageRouter,
+    company_name: str,
+    ticker: str
+):
     """Simulate polling for a press-release that follows an earnings event.
 
-    Runs in the background; prints a status line every half-second until either
-    the press-release is "found" (after a few iterations) or a global shutdown
-    request is detected.
+    Runs in the background; prints a status line every half-second until
+    the press-release is "found" (after a few iterations)
     """
 
+    # Ensure the router finished initial startup (all initial nodes ready)
+    await router.wait_until_ready()
+
     for i in range(5):
-        if shutdown_event.is_set():
-            pprint.pprint(
-                f"[press_release_poller] Cancelled for {company_name} – shutdown requested"
-            )
-            return
 
         await asyncio.sleep(0.5)
         pprint.pprint(
@@ -160,30 +155,19 @@ async def earnings_press_release_poller(broker: MessageBroker, company_name: str
         company_name=company_name,
     )
 
-    await broker.publish(Channel.PRESS_RELEASE, press_release_msg)
+    await router.broker.publish(Channel.PRESS_RELEASE, press_release_msg)
 
 
 async def main() -> None:
 
     global process_pool_global
 
-    shutdown_event = asyncio.Event()
-
-    # Handle graceful shutdown via SIGINT / SIGTERM.
-    loop = asyncio.get_running_loop()
-    for sig in (signal.SIGINT, signal.SIGTERM):
-        loop.add_signal_handler(sig, shutdown_event.set)
-
     cpu_cores = os.cpu_count() or 1
     process_pool_global = ProcessPoolExecutor(max_workers=cpu_cores)
 
 
-    # Barrier must cover subscribers + producers
-    worker_count = router.node_count
-    startup_barrier = asyncio.Barrier(parties=worker_count)
-
     async with asyncio.TaskGroup() as tg:
-        tg.create_task(router.run(shutdown_event, startup_barrier))
+        tg.create_task(msg_router.run())
 
     # Clean-up once all tasks are done.
     process_pool_global.shutdown(wait=True)

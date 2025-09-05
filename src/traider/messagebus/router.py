@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import signal
 # ---------------------------------------------------------------------------
 # typing imports
 # ---------------------------------------------------------------------------
@@ -27,8 +28,12 @@ class MessageRouter:
         self._registry: list[tuple[Channel, MessageHandler, Optional[Channel]]] = []
         self._producers: list[Tuple[ProducerHandler, Optional[Channel]]] = []
         self._shutdown_event: Optional[asyncio.Event] = None
-        self._startup_barrier: Optional[asyncio.Barrier] = None
+        # Internal barrier used to coordinate initial startup of all nodes.
+        self._startup_barrier: Optional[asyncio.Barrier] = None  # not exposed to user
         self._extra_args: Any = ()
+        # Event that is set once all initially registered nodes have passed the
+        # startup barrier and the system is ready to process/publish messages.
+        self._ready_event: asyncio.Event = asyncio.Event()
         # Reference to the TaskGroup created in `run()`. This allows workers
         # to spawn additional background tasks that will be tied to the same
         # lifecycle (i.e. they are cancelled automatically on shutdown).
@@ -77,7 +82,12 @@ class MessageRouter:
                 self._producers.append((func, publish_to))
             else:
                 self._registry.append((listen_to, func, publish_to))
-            return func
+            # Wrap original func so that the router instance is prepended to its arguments
+
+            async def wrapper(*args: Any, **kwargs: Any):  # noqa: D401
+                return await func(*args, **kwargs)
+
+            return func  # keep original callable for type-checkers
         return decorator
 
     async def _run_worker(self, listen_to: Channel, handler: MessageHandler, publish_to: Optional[Channel]):
@@ -85,13 +95,16 @@ class MessageRouter:
         # Signal readiness if a startup barrier is in use.
         if self._startup_barrier is not None:
             await self._startup_barrier.wait()
+            # First coroutine after barrier trips sets readiness flag.
+            if not self._ready_event.is_set():
+                self._ready_event.set()
         while True:
             try:
                 message = await asyncio.wait_for(queue.get(), timeout=1)
                 if self._shutdown_event is not None:
-                    result = await handler(message, self._shutdown_event, *self._extra_args)
+                    result = await handler(self, message, *self._extra_args)
                 else:
-                    result = await handler(message, *self._extra_args)
+                    result = await handler(self, message, *self._extra_args)
                 if result is not None and publish_to is not None:
                     await self.broker.publish(publish_to, result)
             except asyncio.TimeoutError:
@@ -105,12 +118,31 @@ class MessageRouter:
             except Exception:
                 logger.exception(f"Error in handler for channel '{listen_to.value}'")
 
-    async def run(self, shutdown_event: asyncio.Event | None = None, startup_barrier: asyncio.Barrier | None = None, *extra_args: Any):
+    async def run(
+        self,
+        shutdown_event: asyncio.Event | None = None,
+        *extra_args: Any,
+        install_signal_handlers: bool = True,
+    ) -> None:
         # Store extra args so _run_worker can inject them into every handler
         self._extra_args = extra_args
-        self._shutdown_event = shutdown_event
-        self._startup_barrier = startup_barrier
-        if not self._registry:
+        # Create a shutdown event if none provided.
+        self._shutdown_event = shutdown_event or asyncio.Event()
+
+        # Optionally handle SIGINT / SIGTERM automatically.
+        if install_signal_handlers:
+            loop = asyncio.get_running_loop()
+            for sig in (signal.SIGINT, signal.SIGTERM):
+                try:
+                    loop.add_signal_handler(sig, self._shutdown_event.set)
+                except (NotImplementedError, RuntimeError):
+                    # Some platforms or running in threads may not allow it.
+                    pass
+
+        # Create an internal barrier covering all *registered* nodes (workers + producers)
+        self._startup_barrier = asyncio.Barrier(parties=self.node_count) if self.node_count > 0 else None
+
+        if not self._registry and not self._producers:
             logger.warning("No routes registered. Nothing to do.")
             return
         async with asyncio.TaskGroup() as tg:
@@ -125,8 +157,21 @@ class MessageRouter:
             for producer, out_channel in self._producers:
                 tg.create_task(self._run_producer(producer, out_channel))
 
+            # If there is no startup barrier, the system is ready immediately.
+            if self._startup_barrier is None:
+                self._ready_event.set()
+
         # Clear reference once the TaskGroup exits (either normally or via error)
         self._tg = None
+
+    # ------------------------------------------------------------------
+    # Readiness helpers
+    # ------------------------------------------------------------------
+
+    async def wait_until_ready(self) -> None:
+        """Block until the router's initial startup is complete."""
+
+        await self._ready_event.wait()
 
     # ------------------------------------------------------------------
     # Public API for dynamic task creation
@@ -161,11 +206,21 @@ class MessageRouter:
         publish_to: Optional[Channel],
     ) -> None:
         """Run a producer coroutine and forward its (non-None) result."""
+
+        # Ensure producers also participate in the startup synchronisation so
+        # the barrier trips once *all* initial nodes are ready.
+        if self._startup_barrier is not None:
+            await self._startup_barrier.wait()
+            if not self._ready_event.is_set():
+                self._ready_event.set()
+
         result = await producer_fn(
-            self.broker,
-            self._shutdown_event,
-            self._startup_barrier,
+            self,  # pass router for convenience
             *self._extra_args,
         )
+
+        # Producer waited on startup_barrier inside itself; ensure ready_event is set.
+        if self._startup_barrier is not None and not self._ready_event.is_set():
+            self._ready_event.set()
         if result is not None and publish_to is not None:
             await self.broker.publish(publish_to, result)
