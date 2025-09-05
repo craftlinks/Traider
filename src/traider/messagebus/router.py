@@ -1,5 +1,9 @@
+# ---------------------------------------------------------------------------
+# Standard library imports
+# ---------------------------------------------------------------------------
 import asyncio
 import logging
+from datetime import timedelta
 import signal
 # ---------------------------------------------------------------------------
 # typing imports
@@ -24,9 +28,9 @@ class MessageRouter:
     """
     def __init__(self, broker: MessageBroker):
         self.broker = broker
-        # Registry contains tuples of input channel, message handler(co-routine), and output channel(optional)
-        self._registry: list[tuple[Channel, MessageHandler, Optional[Channel]]] = []
-        self._producers: list[Tuple[ProducerHandler, Optional[Channel]]] = []
+        # Registry tuples: (listen_channel, handler, publish_channel, ttl)
+        self._registry: list[tuple[Channel, MessageHandler, Optional[Channel], Optional[float | int | timedelta]]] = []
+        self._producers: list[Tuple[ProducerHandler, Optional[Channel], Optional[float | int | timedelta]]] = []
         self._shutdown_event: Optional[asyncio.Event] = None
         # Internal barrier used to coordinate initial startup of all nodes.
         self._startup_barrier: Optional[asyncio.Barrier] = None  # not exposed to user
@@ -65,6 +69,8 @@ class MessageRouter:
         self,
         listen_to: Optional[Channel] = None,
         publish_to: Optional[Channel] = None,
+        *,
+        ttl: float | int | timedelta | None = None,
     ) -> Callable[[Callable[..., Coroutine[Any, Any, Any]]], Callable[..., Coroutine[Any, Any, Any]]]:
         """Decorate a coroutine as a subscriber or producer.
 
@@ -79,15 +85,10 @@ class MessageRouter:
             if listen_to is None:
                 if publish_to is None:
                     raise ValueError("Producer route requires publish_to channel")
-                self._producers.append((func, publish_to))
+                self._producers.append((func, publish_to, ttl))
             else:
-                self._registry.append((listen_to, func, publish_to))
-            # Wrap original func so that the router instance is prepended to its arguments
-
-            async def wrapper(*args: Any, **kwargs: Any):  # noqa: D401
-                return await func(*args, **kwargs)
-
-            return func  # keep original callable for type-checkers
+                self._registry.append((listen_to, func, publish_to, ttl))
+            return func
         return decorator
 
     async def _run_worker(self, listen_to: Channel, handler: MessageHandler, publish_to: Optional[Channel]):
@@ -114,6 +115,7 @@ class MessageRouter:
                     break
                 continue
             except asyncio.CancelledError:
+                logger.debug(f"Worker for channel '{listen_to.value}' cancelled")
                 break
             except Exception:
                 logger.exception(f"Error in handler for channel '{listen_to.value}'")
@@ -146,16 +148,23 @@ class MessageRouter:
             logger.warning("No routes registered. Nothing to do.")
             return
         async with asyncio.TaskGroup() as tg:
+            loop = asyncio.get_running_loop()
             # Expose the TaskGroup so that workers/producers can create
             # child-tasks that are properly supervised.
             self._tg = tg
 
             # Start subscribers (workers)
-            for listen_to, handler, publish_to in self._registry:
-                tg.create_task(self._run_worker(listen_to, handler, publish_to))
+            for listen_to, handler, publish_to, ttl in self._registry:
+                task = tg.create_task(self._run_worker(listen_to, handler, publish_to))
+                if ttl is not None:
+                    seconds = ttl.total_seconds() if isinstance(ttl, timedelta) else float(ttl)
+                    loop.call_later(seconds, task.cancel)
             # Start producers
-            for producer, out_channel in self._producers:
-                tg.create_task(self._run_producer(producer, out_channel))
+            for producer, out_channel, ttl in self._producers:
+                task = tg.create_task(self._run_producer(producer, out_channel))
+                if ttl is not None:
+                    seconds = ttl.total_seconds() if isinstance(ttl, timedelta) else float(ttl)
+                    loop.call_later(seconds, task.cancel)
 
             # If there is no startup barrier, the system is ready immediately.
             if self._startup_barrier is None:
@@ -174,27 +183,58 @@ class MessageRouter:
         await self._ready_event.wait()
 
     # ------------------------------------------------------------------
+    # Shutdown helper
+    # ------------------------------------------------------------------
+
+    def request_shutdown(self) -> None:
+        """Signal graceful shutdown to all router tasks."""
+
+        if self._shutdown_event is not None:
+            self._shutdown_event.set()
+
+    # ------------------------------------------------------------------
     # Public API for dynamic task creation
     # ------------------------------------------------------------------
 
-    def spawn_task(self, coro: Coroutine[Any, Any, Any]) -> asyncio.Task[Any]:
-        """Schedule *coro* inside the router's TaskGroup.
+    def spawn_task(
+        self,
+        coro: Coroutine[Any, Any, Any],
+        *,
+        ttl: float | int | timedelta | None = None,
+    ) -> asyncio.Task[Any]:
+        """Schedule *coro* in the router's TaskGroup with optional lifetime.
 
-        Workers/producers can call this method to start additional background
-        coroutines that should share the router's lifetime.  The returned
-        asyncio.Task will be cancelled automatically when the router shuts
-        down.
-
-        Raises
-        ------
-        RuntimeError
-            If the router is not currently running (i.e. no TaskGroup).
+        Parameters
+        ----------
+        coro
+            Coroutine to execute.
+        ttl
+            Maximum lifetime. If *None* the task runs until completion or
+            router shutdown.  If a number, interpreted as seconds.  A
+            ``datetime.timedelta`` is also accepted.
         """
 
         if self._tg is None:
             raise RuntimeError("MessageRouter is not running – cannot spawn tasks")
 
-        return self._tg.create_task(coro)
+        task = self._tg.create_task(coro)
+
+        if ttl is not None:
+            # Convert to float seconds
+            if isinstance(ttl, timedelta):
+                ttl_seconds = ttl.total_seconds()
+            else:
+                ttl_seconds = float(ttl)
+
+            loop = asyncio.get_running_loop()
+
+            def _cancel_task(t: asyncio.Task[Any] = task):
+                if not t.done():
+                    t.cancel()
+
+            loop.call_later(ttl_seconds, _cancel_task)
+
+        return task
 
     # ---------------------------------------------------------------------
     # Internal helpers

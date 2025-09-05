@@ -20,6 +20,7 @@ from traider.messagebus.router import MessageRouter
 
 import logging
 logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 # def _cpu_bound_worker_fn(message: EarningsEvent) -> None:
 #     pprint.pprint(
@@ -46,14 +47,14 @@ msg_router = MessageRouter(msg_broker)
 process_pool_global: ProcessPoolExecutor | None = None
 
 
-@msg_router.route(listen_to=Channel.EARNINGS)
+@msg_router.route(listen_to=Channel.EARNINGS, ttl=20)
 async def earnings_sink(
     router: MessageRouter,
     event: EarningsEvent,
 ) -> EarningsEvent | None:
-    """Kick off a poller to retrieve the press-release that follows *event*."""
+    """Kick off a worker dynamically to retrieve the press-release that follows *event*."""
 
-    pprint.pprint(f"[earnings_sink] Triggering poller for {event.company_name}")
+    logger.info(f"[earnings_sink] Triggering poller for {event.company_name}")
     # Start a background poller that will automatically be cancelled when the
     # router shuts down because it is spawned via `router.spawn_task`.
     router.spawn_task(
@@ -61,7 +62,8 @@ async def earnings_sink(
             router,
             event.company_name,
             event.ticker,
-        )
+        ),
+        ttl=15,  # seconds – shortened for demo; use 24*3600 in real scenario
     )
 
 
@@ -70,14 +72,14 @@ async def earnings_sink(
 #--------------------------------------------------------------------
 
 
-@msg_router.route(listen_to=Channel.PRESS_RELEASE)
+@msg_router.route(listen_to=Channel.PRESS_RELEASE, ttl=20)
 async def press_release_worker(
     router: MessageRouter,
     message: PressRelease,
 ) -> None:
     """Process a press-release once it has been published."""
 
-    pprint.pprint(
+    logger.info(
         f"[press_release_worker] Received press release for {message.ticker} — {message.title}"
     )
 
@@ -94,31 +96,31 @@ async def press_release_worker(
 #     return event
 
 
-@msg_router.route(publish_to=Channel.EARNINGS)
+@msg_router.route(publish_to=Channel.EARNINGS, ttl=5)
 async def earnings_producer(router: MessageRouter):
     """Generate dummy earnings events."""
 
     await router.wait_until_ready()  # Ensure all listeners are ready
+    try:
+        for ticker in ["AAPL", "MSFT", "GOOG", "AMZN"]:
 
-    for ticker in ["AAPL", "MSFT", "GOOG", "AMZN"]:
+            earnings_event = EarningsEvent(
+                id=uuid.uuid4().int,
+                ticker=ticker,
+                company_name=ticker,
+                event_name=f"{ticker} Earnings",
+                time_type="after_hours",
+                earnings_call_time=datetime.now(),
+                eps_estimate=random.random() * 10,
+                eps_actual=random.random() * 10,
+                eps_surprise=random.random() * 10,
+                eps_surprise_percent=random.random() * 10,
+                market_cap=random.random() * 1000000000,
+            )
 
-        earnings_event = EarningsEvent(
-            id=uuid.uuid4().int,
-            ticker=ticker,
-            company_name=ticker,
-            event_name=f"{ticker} Earnings",
-            time_type="after_hours",
-            earnings_call_time=datetime.now(),
-            eps_estimate=random.random() * 10,
-            eps_actual=random.random() * 10,
-            eps_surprise=random.random() * 10,
-            eps_surprise_percent=random.random() * 10,
-            market_cap=random.random() * 1000000000,
-        )
-
-        await router.broker.publish(Channel.EARNINGS, earnings_event)
-        await asyncio.sleep(1)
-
+            await router.broker.publish(Channel.EARNINGS, earnings_event)
+    except asyncio.CancelledError:
+        logger.debug(f"[earnings_producer] Cancelled")
 
 async def earnings_press_release_poller(
     router: MessageRouter,
@@ -127,55 +129,48 @@ async def earnings_press_release_poller(
 ):
     """Simulate polling for a press-release that follows an earnings event.
 
-    Runs in the background; prints a status line every half-second until
-    the press-release is "found" (after a few iterations)
+    Runs in the background; it will be cancelled when the ttl expires or the router shuts down.
     """
 
     # Ensure the router finished initial startup (all initial nodes ready)
     await router.wait_until_ready()
+    try:
+        while True:
+            await asyncio.sleep(2.5)
 
-    for i in range(5):
+            # Craft a dummy press-release payload and publish it to the message-bus.
+            press_release_msg = PressRelease(
+                ticker=ticker,
+                title=f"{company_name} beats EPS expectations",
+                url="https://example.com/press-release",
+                type="earnings",
+                pub_date=datetime.now().isoformat(),
+                company_name=company_name,
+            )
 
-        await asyncio.sleep(0.5)
-        pprint.pprint(
-            f"[press_release_poller] Polling attempt {i+1} for {company_name} ({ticker})"
-        )
-
-    pprint.pprint(
-        f"[press_release_poller] Press-release found for {company_name} ({ticker})"
-    )
-
-    # Craft a dummy press-release payload and publish it to the message-bus.
-    press_release_msg = PressRelease(
-        ticker=ticker,
-        title=f"{company_name} beats EPS expectations",
-        url="https://example.com/press-release",
-        type="earnings",
-        pub_date=datetime.now().isoformat(),
-        company_name=company_name,
-    )
-
-    await router.broker.publish(Channel.PRESS_RELEASE, press_release_msg)
+            await router.broker.publish(Channel.PRESS_RELEASE, press_release_msg)
+    except asyncio.CancelledError:
+        logger.debug(f"[earnings_press_release_poller] Cancelled for {company_name} – ttl expired")
 
 
 async def main() -> None:
 
     global process_pool_global
 
-    cpu_cores = os.cpu_count() or 1
-    process_pool_global = ProcessPoolExecutor(max_workers=cpu_cores)
+    # cpu_cores = os.cpu_count() or 1
+    # process_pool_global = ProcessPoolExecutor(max_workers=cpu_cores)
 
 
     async with asyncio.TaskGroup() as tg:
         tg.create_task(msg_router.run())
 
     # Clean-up once all tasks are done.
-    process_pool_global.shutdown(wait=True)
-    logging.info("Main task complete")
+    # process_pool_global.shutdown(wait=True)
+    logger.info("Main task complete")
 
 
 if __name__ == "__main__":
     try:
         asyncio.run(main())
     except KeyboardInterrupt:
-        logging.debug("Shutting down...")
+        logger.debug("Shutting down...")
