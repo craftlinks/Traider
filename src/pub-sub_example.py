@@ -4,8 +4,8 @@ import asyncio
 # ---------------------------------------------------------------------------
 from concurrent.futures import ProcessPoolExecutor
 from datetime import datetime
+from enum import Enum
 import os
-import pprint
 import random
 import time
 import uuid
@@ -13,7 +13,6 @@ import uuid
 # Models
 from traider.yfinance._models import PressRelease
 from traider.yfinance import EarningsEvent
-from traider.messagebus.channels import Channel
 from traider.messagebus.protocol import MessageBroker
 from traider.messagebus.brokers.memory import InMemoryBroker
 from traider.messagebus.router import MessageRouter
@@ -21,6 +20,10 @@ from traider.messagebus.router import MessageRouter
 import logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+class Channel(str, Enum):
+    EARNINGS = "earnings"
+    PRESS_RELEASE = "press_release"
 
 def _cpu_bound_worker_fn(message: EarningsEvent) -> None:
     logger.info(

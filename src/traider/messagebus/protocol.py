@@ -1,33 +1,16 @@
 # mypy expects TypeVar from typing, not ast
 from __future__ import annotations
 
-from typing import Any, Protocol, Literal, TypeVar
-from enum import Enum
+from typing import Any, Protocol
 import asyncio
-from traider.yfinance import EarningsEvent, PressRelease
-from typing import overload
-from traider.messagebus.channels import Channel
-
-T_msg = TypeVar("T_msg", EarningsEvent,  PressRelease)
 
 class MessageBroker(Protocol):
     
-    @overload
-    async def publish(self, channel_name: Literal[Channel.EARNINGS], message: EarningsEvent) -> None:
+    async def publish(self, channel_name: str, message: Any) -> None:
         ...
 
-    @overload
-    async def publish(self, channel_name: Literal[Channel.PRESS_RELEASE], message: PressRelease) -> None:
+    async def subscribe(self, channel_name: str) -> asyncio.Queue[Any]:
         ...
 
-    @overload
-    async def subscribe(self, channel_name: Literal[Channel.EARNINGS]) -> asyncio.Queue[EarningsEvent]:
-        ...
-
-    @overload
-    async def subscribe(self, channel_name: Literal[Channel.PRESS_RELEASE]) -> asyncio.Queue[PressRelease]:
-        ...
-
-
-    def unsubscribe(self, channel_name: Channel, queue: asyncio.Queue[EarningsEvent | PressRelease]) -> None:
+    def unsubscribe(self, channel_name: str, queue: asyncio.Queue[Any]) -> None:
         ...
