@@ -82,8 +82,10 @@ async def earnings_producer(router: MessageRouter):
     while True:
         logger.info(f"Producing earnings events for {date.today()} ...")
         earnings: list[yf.EarningsEvent] = await yf.get_earnings(date.today())
-        for earning in earnings:
-            await router.broker.publish(Channel.EARNINGS, earning)
+        if earnings:
+            await asyncio.gather(
+                *(router.broker.publish(Channel.EARNINGS, e) for e in earnings)
+            )
         await asyncio.sleep(EARNINGS_PRODUCER_INTERVAL)
     
 
@@ -167,15 +169,11 @@ async def save_earnings_to_db(router: MessageRouter, earning: yf.EarningsEvent):
 @router.route(listen_to=Channel.PRESS_RELEASE, publish_to=Channel.PRESS_RELEASE_CONTENT)
 async def process_press_release(router: MessageRouter, press_release: yf.PressRelease):
     logger.info(f"Processing press release for {press_release.ticker}")
-    logger.debug(f"Saving press release for {press_release.ticker} to db")
-    id = await press_release.to_db()
-    if id is None:
-        logger.warning(f"Failed to save initial press release for {press_release.ticker} to db")
-        return 
     press_release.text_content = await yf.get_press_release_content(press_release.url)
+
     id = await press_release.to_db()
     if id is None:
-        logger.warning(f"Failed to save processed press release for {press_release.ticker} to db")
+        logger.warning(f"Failed to save press release for {press_release.ticker} to db")
         return
     logger.debug(f"Saved press release for {press_release.ticker} to db with id {id}")
     return press_release
