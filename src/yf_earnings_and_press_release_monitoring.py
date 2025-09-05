@@ -1,20 +1,21 @@
 import asyncio
 from datetime import date
 from enum import Enum
-import hashlib
+from typing import Dict, Optional
 from traider.messagebus.protocol import MessageBroker
 from traider.messagebus.brokers.memory import InMemoryBroker
 from traider.messagebus.router import MessageRouter
-from typing import Optional, Dict
 from dspy.signatures import Signature, InputField, OutputField
 from dspy import Predict, LM, configure
 import os
 from dotenv import load_dotenv
 
-from traider.platforms.cache.in_memory_cache_helper import FixedSizeLRUSet
+# Track tickers for which polling was cancelled because an earnings report was found.
+processed_tickers: set[str] = set()
+# Store last processed press‐release ID per ticker
+last_press_release_id: Dict[str, str] = {}
 import traider.yfinance as yf
 import logging
-from collections import OrderedDict
 
 # SETUP
 logging.basicConfig(level=logging.INFO)
@@ -27,10 +28,6 @@ PRESS_RELEASE_POLL_INTERVAL = 10
 
 # Track active polling tasks per ticker to avoid spawning duplicates
 earnings_polling_tasks: Dict[str, asyncio.Task] = {}
-# Track tickers for which polling was cancelled because an earnings report was found.
-processed_tickers: set[str] = set()
-# Single instance used by the monitoring loop
-seen_press_release_ids = FixedSizeLRUSet(max_items=10_000)
 
 # ---------------------------------------------------------------------------
 # Channel definitions
@@ -103,17 +100,18 @@ async def earnings_consumer(router: MessageRouter, earning: yf.EarningsEvent):
         while True:
             try:
                 press_release: yf.PressRelease | None = await yf.get_latest_press_release(ticker)
-                # generate unique id for the press release based on the url and the pub date
+                # Compose a deterministic *key* from URL + publication date (hashing not necessary)
                 if press_release is not None:
-                    id_ = hashlib.sha256(f"{press_release.url}{press_release.pub_date}".encode()).hexdigest()
+                    id_ = f"{press_release.url}|{press_release.pub_date}"
                     # Skip duplicates using the LRU set (maintains max 10k ids)
-                    if seen_press_release_ids.add(id_):
+                    if last_press_release_id.get(ticker) == id_:
                         # Already seen -> skip
                         logger.debug("Press release %s for %s already processed – skipping", id_, ticker)
                     else:
                         # New ID – publish
                         await router.broker.publish(Channel.PRESS_RELEASE, press_release)
-            except Exception:  # noqa: BLE001
+                        last_press_release_id[ticker] = id_
+            except Exception:
                 logger.exception("Error while polling press release for %s", ticker)
 
             # Allow cancellation between polling cycles

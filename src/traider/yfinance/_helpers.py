@@ -42,9 +42,15 @@ async def _initialize_session() -> None:
     """Internal logic for creating the session and fetching the crumb."""
     if Y_STATE.session is not None:
         return  # idempotent
-# Create client
-    Y_STATE.session = httpx.AsyncClient(follow_redirects=True)
-    Y_STATE.session.headers.update({"User-Agent": _USER_AGENT})
+    # Create client
+    # Use a single HTTP/2 client with a shared connection pool & built-in retries.
+    transport = httpx.AsyncHTTPTransport(retries=3)
+    Y_STATE.session = httpx.AsyncClient(
+        follow_redirects=True,
+        http2=True,
+        transport=transport,
+        headers={"User-Agent": _USER_AGENT},
+    )
 
     cookie, crumb = await _fetch_cookie_and_crumb(Y_STATE.session)
     if cookie and crumb:
