@@ -312,7 +312,8 @@ async def get_press_release_content(url: str) -> str:
 
             atoms_div = soup.find("div", class_="atoms-wrapper")
             if atoms_div is not None:
-                return "".join(str(child) for child in atoms_div.contents)  # type: ignore[attr-defined]
+                # Return plain text instead of raw HTML
+                return atoms_div.get_text(separator=" ", strip=True)  # type: ignore[attr-defined]
 
             script_tag = soup.find(
                 "script",
@@ -328,13 +329,15 @@ async def get_press_release_content(url: str) -> str:
                         content_html = data.get("content")
                         if isinstance(content_html, str) and content_html.strip():
                             logger.info("Extracted article body from caas-art JSON for %s", url)
-                            return content_html
+                            # Convert extracted HTML content to plain text
+                            return BeautifulSoup(content_html, "html.parser").get_text(separator=" ", strip=True)
                 except _json.JSONDecodeError as json_exc:  # pragma: no cover
                     logger.debug("Failed to decode caas-art JSON for %s: %s", url, json_exc)
         except Exception as parse_exc:  # pragma: no cover
             logger.debug("Failed to parse article body for %s: %s", url, parse_exc)
 
-        return html_text  # Fallback – let caller handle further parsing
+        # Fallback – return the full page as plain text
+        return BeautifulSoup(html_text, "html.parser").get_text(separator=" ", strip=True)
     except httpx.RequestError as exc:
         logger.error("Failed to fetch press-release content from %s: %s", url, exc)
         return ""

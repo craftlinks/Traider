@@ -4,8 +4,6 @@ from datetime import datetime
 import logging
 import asyncio
 
-from traider.db.database import get_db_connection
-
 
 logger = logging.getLogger(__name__)
 

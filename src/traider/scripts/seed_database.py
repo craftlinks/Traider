@@ -23,7 +23,7 @@ import sys
 from pathlib import Path
 from typing import Mapping, Sequence, Any
 
-from traider.db import create_tables, add_company_and_exchange, add_company, add_url, add_earnings_report, get_company_by_ticker, list_companies, get_earnings_by_date, get_earnings_for_ticker
+from traider.db import create_tables, add_company_and_exchange, add_company
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger(__name__)

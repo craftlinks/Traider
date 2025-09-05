@@ -224,7 +224,7 @@ def save_earnings_event(event: "EarningsEvent", conn: sqlite3.Connection | None 
         call_time = _validate_datetime(event.earnings_call_time)
 
         if not symbol or not company_name:
-            logger.debug("Skipping invalid earnings event – symbol=%s, company=%s", event.ticker, event.company_name)
+            logger.warning("Skipping invalid earnings event – symbol=%s, company=%s", event.ticker, event.company_name)
             return None
 
         # Ensure company exists
