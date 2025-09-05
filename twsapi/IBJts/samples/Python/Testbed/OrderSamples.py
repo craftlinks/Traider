@@ -3,26 +3,25 @@ Copyright (C) 2025 Interactive Brokers LLC. All rights reserved. This code is su
  and conditions of the IB API Non-Commercial License or the IB API Commercial License, as applicable.
 """
 
-
-from ibapi.order import (OrderComboLeg, Order, COMPETE_AGAINST_BEST_OFFSET_UP_TO_MID)
-from ibapi.common import * # @UnusedWildImport
+from ibapi.order import OrderComboLeg, Order, COMPETE_AGAINST_BEST_OFFSET_UP_TO_MID
+from ibapi.common import *  # @UnusedWildImport
 from ibapi.tag_value import TagValue
 from ibapi import order_condition
-from ibapi.order_condition import * # @UnusedWildImport
+from ibapi.order_condition import *  # @UnusedWildImport
 from ibapi.order_cancel import OrderCancel
 from decimal import Decimal
 
 
 class OrderSamples:
-
-    """ <summary>
-    #/ An auction order is entered into the electronic trading system during the pre-market opening period for execution at the 
-    #/ Calculated Opening Price (COP). If your order is not filled on the open, the order is re-submitted as a limit order with 
+    """<summary>
+    #/ An auction order is entered into the electronic trading system during the pre-market opening period for execution at the
+    #/ Calculated Opening Price (COP). If your order is not filled on the open, the order is re-submitted as a limit order with
     #/ the limit price set to the COP or the best bid/ask after the market opens.
     #/ Products: FUT, STK
     </summary>"""
+
     @staticmethod
-    def AtAuction(action:str, quantity:Decimal, price:float):
+    def AtAuction(action: str, quantity: Decimal, price: float):
         #! [auction]
         order = Order()
         order.action = action
@@ -38,9 +37,11 @@ class OrderSamples:
     #/ may be used to increase the price range over which the limit order is eligible to execute. The market sees only the limit price.
     #/ Products: STK
     </summary>"""
+
     @staticmethod
-    def Discretionary(action:str, quantity:Decimal, price:float, discretionaryAmount:float):
-    
+    def Discretionary(
+        action: str, quantity: Decimal, price: float, discretionaryAmount: float
+    ):
         #! [discretionary]
         order = Order()
         order.action = action
@@ -50,7 +51,6 @@ class OrderSamples:
         order.discretionaryAmt = discretionaryAmount
         #! [discretionary]
         return order
-    
 
     """ <summary>
     #/ A Market order is an order to buy or sell at the market bid or offer price. A market order may increase the likelihood of a fill 
@@ -58,9 +58,9 @@ class OrderSamples:
     #/ lower/higher than the current displayed bid/ask.
     #/ Products: BOND, CFD, EFP, CASH, FUND, FUT, FOP, OPT, STK, WAR
     </summary>"""
+
     @staticmethod
-    def MarketOrder(action:str, quantity:Decimal):
-    
+    def MarketOrder(action: str, quantity: Decimal):
         #! [market]
         order = Order()
         order.action = action
@@ -68,7 +68,6 @@ class OrderSamples:
         order.totalQuantity = quantity
         #! [market]
         return order
-    
 
     """ <summary>
     #/ A Market if Touched (MIT) is an order to buy (or sell) a contract below (or above) the market. Its purpose is to take advantage 
@@ -79,9 +78,9 @@ class OrderSamples:
     #/ stop order, except that an MIT sell order is placed above the current market price, and a stop sell order is placed below
     #/ Products: BOND, CFD, CASH, FUT, FOP, OPT, STK, WAR
     </summary>"""
+
     @staticmethod
-    def MarketIfTouched(action:str, quantity:Decimal, price:float):
-    
+    def MarketIfTouched(action: str, quantity: Decimal, price: float):
         #! [market_if_touched]
         order = Order()
         order.action = action
@@ -90,15 +89,14 @@ class OrderSamples:
         order.auxPrice = price
         #! [market_if_touched]
         return order
-    
 
     """ <summary>
     #/ A Market-on-Close (MOC) order is a market order that is submitted to execute as close to the closing price as possible.
     #/ Products: CFD, FUT, STK, WAR
     </summary>"""
+
     @staticmethod
-    def MarketOnClose(action:str, quantity:Decimal):
-    
+    def MarketOnClose(action: str, quantity: Decimal):
         #! [market_on_close]
         order = Order()
         order.action = action
@@ -106,16 +104,15 @@ class OrderSamples:
         order.totalQuantity = quantity
         #! [market_on_close]
         return order
-    
 
     """ <summary>
     #/ A Market-on-Open (MOO) order combines a market order with the OPG time in force to create an order that is automatically
     #/ submitted at the market's open and fills at the market price.
     #/ Products: CFD, STK, OPT, WAR
     </summary>"""
+
     @staticmethod
-    def MarketOnOpen(action:str, quantity:Decimal):
-    
+    def MarketOnOpen(action: str, quantity: Decimal):
         #! [market_on_open]
         order = Order()
         order.action = action
@@ -124,7 +121,6 @@ class OrderSamples:
         order.tif = "OPG"
         #! [market_on_open]
         return order
-    
 
     """ <summary>
     #/ ISE MidpoMatch:int (MPM) orders always execute at the midpoof:the:int NBBO. You can submit market and limit orders direct-routed 
@@ -132,9 +128,9 @@ class OrderSamples:
     #/ execute only when the midpoprice:is:int better than the limit price. Standard MPM orders are completely anonymous.
     #/ Products: STK
     </summary>"""
+
     @staticmethod
-    def MidpointMatch(action:str, quantity:Decimal):
-    
+    def MidpointMatch(action: str, quantity: Decimal):
         #! [midpoint_match]
         order = Order()
         order.action = action
@@ -142,22 +138,21 @@ class OrderSamples:
         order.totalQuantity = quantity
         #! [midpoint_match]
         return order
-    
 
     """ <summary>
 	#/ A Midprice order is designed to split the difference between the bid and ask prices, and fill at the current midpoint of 
 	#/ the NBBO or better. Set an optional price cap to define the highest price (for a buy order) or the lowest price (for a sell 
 	#/ order) you are willing to accept. Requires TWS 975+. Smart-routing to US stocks only.
     </summary>"""
+
     @staticmethod
-    def Midprice(action:str, quantity:Decimal, priceCap:float):
-    
+    def Midprice(action: str, quantity: Decimal, priceCap: float):
         #! [midprice]
         order = Order()
         order.action = action
         order.orderType = "MIDPRICE"
         order.totalQuantity = quantity
-        order.lmtPrice = priceCap # optional
+        order.lmtPrice = priceCap  # optional
         #! [midprice]
         return order
 
@@ -170,18 +165,17 @@ class OrderSamples:
     #/     Buy order price = Ask price - offset amount
     #/ Products: STK
     </summary>"""
+
     @staticmethod
-    def PeggedToMarket(action:str, quantity:Decimal, marketOffset:float):
-    
+    def PeggedToMarket(action: str, quantity: Decimal, marketOffset: float):
         #! [pegged_market]
         order = Order()
         order.action = action
         order.orderType = "PEG MKT"
         order.totalQuantity = quantity
-        order.auxPrice = marketOffset#Offset price
+        order.auxPrice = marketOffset  # Offset price
         #! [pegged_market]
         return order
-    
 
     """ <summary>
     #/ A Pegged to Stock order continually adjusts the option order price by the product of a signed user-define delta and the change of 
@@ -193,9 +187,15 @@ class OrderSamples:
     #/ price will be rounded to the nearest penny in favor of the order.
     #/ Products: OPT
     </summary>"""
+
     @staticmethod
-    def PeggedToStock(action:str, quantity:Decimal, delta:float, stockReferencePrice:float, startingPrice:float):
-    
+    def PeggedToStock(
+        action: str,
+        quantity: Decimal,
+        delta: float,
+        stockReferencePrice: float,
+        startingPrice: float,
+    ):
         #! [pegged_stock]
         order = Order()
         order.action = action
@@ -206,7 +206,6 @@ class OrderSamples:
         order.startingPrice = startingPrice
         #! [pegged_stock]
         return order
-    
 
     """ <summary>
     #/ Relative (a.k.a. Pegged-to-Primary) orders provide a means for traders to seek a more aggressive price than the National Best Bid 
@@ -220,10 +219,11 @@ class OrderSamples:
     #/ Stocks, Options and Futures - not available on paper trading
     #/ Products: CFD, STK, OPT, FUT
     </summary>"""
+
     @staticmethod
-    def RelativePeggedToPrimary(action:str, quantity:Decimal, priceCap:float, 
-                                offsetAmount:float):
-    
+    def RelativePeggedToPrimary(
+        action: str, quantity: Decimal, priceCap: float, offsetAmount: float
+    ):
         #! [relative_pegged_primary]
         order = Order()
         order.action = action
@@ -233,7 +233,6 @@ class OrderSamples:
         order.auxPrice = offsetAmount
         #! [relative_pegged_primary]
         return order
-    
 
     """ <summary>
     #/ Sweep-to-fill orders are useful when a trader values speed of execution over price. A sweep-to-fill order identifies the best price 
@@ -242,9 +241,9 @@ class OrderSamples:
     #/ immediate execution.
     #/ Products: CFD, STK, WAR
     </summary>"""
+
     @staticmethod
-    def SweepToFill(action:str, quantity:Decimal, price:float):
-    
+    def SweepToFill(action: str, quantity: Decimal, price: float):
         #! [sweep_to_fill]
         order = Order()
         order.action = action
@@ -254,7 +253,6 @@ class OrderSamples:
         order.sweepToFill = True
         #! [sweep_to_fill]
         return order
-    
 
     """ <summary>
     #/ For option orders routed to the Boston Options Exchange (BOX) you may elect to participate in the BOX's price improvement auction in 
@@ -267,10 +265,11 @@ class OrderSamples:
     #/ Products: OPT
     #/ Supported Exchanges: BOX
     </summary>"""
+
     @staticmethod
-    def AuctionLimit(action:str, quantity:Decimal, price:float, 
-                     auctionStrategy:int):
-    
+    def AuctionLimit(
+        action: str, quantity: Decimal, price: float, auctionStrategy: int
+    ):
         #! [auction_limit]
         order = Order()
         order.action = action
@@ -280,7 +279,6 @@ class OrderSamples:
         order.auctionStrategy = auctionStrategy
         #! [auction_limit]
         return order
-    
 
     """ <summary>
     #/ For option orders routed to the Boston Options Exchange (BOX) you may elect to participate in the BOX's price improvement auction in pennies. 
@@ -296,10 +294,11 @@ class OrderSamples:
     #/ Products: OPT
     #/ Supported Exchanges: BOX
     </summary>"""
+
     @staticmethod
-    def AuctionPeggedToStock(action:str, quantity:Decimal, startingPrice:float, 
-                             delta:float):
-    
+    def AuctionPeggedToStock(
+        action: str, quantity: Decimal, startingPrice: float, delta: float
+    ):
         #! [auction_pegged_stock]
         order = Order()
         order.action = action
@@ -309,7 +308,6 @@ class OrderSamples:
         order.startingPrice = startingPrice
         #! [auction_pegged_stock]
         return order
-    
 
     """ <summary>
     #/ For option orders routed to the Boston Options Exchange (BOX) you may elect to participate in the BOX's price improvement auction in pennies. 
@@ -325,9 +323,9 @@ class OrderSamples:
     #/ Products: OPT
     #/ Supported Exchanges: BOX
     </summary>"""
+
     @staticmethod
-    def AuctionRelative(action:str, quantity:Decimal, offset:float):
-    
+    def AuctionRelative(action: str, quantity: Decimal, offset: float):
         #! [auction_relative]
         order = Order()
         order.action = action
@@ -336,26 +334,24 @@ class OrderSamples:
         order.auxPrice = offset
         #! [auction_relative]
         return order
-    
 
     """ <summary>
     #/ The Block attribute is used for large volume option orders on ISE that consist of at least 50 contracts. To execute large-volume 
     #/ orders over time without moving the market, use the Accumulate/Distribute algorithm.
     #/ Products: OPT
     </summary>"""
+
     @staticmethod
-    def Block(action:str, quantity:Decimal, price:float):
-    
+    def Block(action: str, quantity: Decimal, price: float):
         # ! [block]
         order = Order()
         order.action = action
         order.orderType = "LMT"
-        order.totalQuantity = quantity#Large volumes!
+        order.totalQuantity = quantity  # Large volumes!
         order.lmtPrice = price
         order.blockOrder = True
         # ! [block]
         return order
-    
 
     """ <summary>
     #/ A Box Top order executes as a market order at the current best price. If the order is only partially filled, the remainder is submitted as 
@@ -363,9 +359,9 @@ class OrderSamples:
     #/ Products: OPT
     #/ Supported Exchanges: BOX
     </summary>"""
+
     @staticmethod
-    def BoxTop(action:str, quantity:Decimal):
-    
+    def BoxTop(action: str, quantity: Decimal):
         # ! [boxtop]
         order = Order()
         order.action = action
@@ -373,16 +369,15 @@ class OrderSamples:
         order.totalQuantity = quantity
         # ! [boxtop]
         return order
-    
 
     """ <summary>
     #/ A Limit order is an order to buy or sell at a specified price or better. The Limit order ensures that if the order fills, 
     #/ it will not fill at a price less favorable than your limit price, but it does not guarantee a fill.
     #/ Products: BOND, CFD, CASH, FUT, FOP, OPT, STK, WAR
     </summary>"""
+
     @staticmethod
-    def LimitOrder(action:str, quantity:Decimal, limitPrice:float):
-    
+    def LimitOrder(action: str, quantity: Decimal, limitPrice: float):
         # ! [limitorder]
         order = Order()
         order.action = action
@@ -391,16 +386,15 @@ class OrderSamples:
         order.lmtPrice = limitPrice
         # ! [limitorder]
         return order
-        
+
     """ <summary>            
     #/ Forex orders can be placed in demonination of second currency in pair using cashQty field
     #/ Requires TWS or IBG 963+
     #/ https://www.interactivebrokers.com/en/index.php?f=23876#963-02
     </summary>"""
-        
+
     @staticmethod
-    def LimitOrderWithCashQty(action:str, limitPrice:float, cashQty:float):
-    
+    def LimitOrderWithCashQty(action: str, limitPrice: float, cashQty: float):
         # ! [limitorderwithcashqty]
         order = Order()
         order.action = action
@@ -410,17 +404,17 @@ class OrderSamples:
         # ! [limitorderwithcashqty]
         return order
 
-
     """ <summary>
     #/ A Limit if Touched is an order to buy (or sell) a contract at a specified price or better, below (or above) the market. This order is 
     #/ held in the system until the trigger price is touched. An LIT order is similar to a stop limit order, except that an LIT sell order is 
     #/ placed above the current market price, and a stop limit sell order is placed below.
     #/ Products: BOND, CFD, CASH, FUT, FOP, OPT, STK, WAR
     </summary>"""
+
     @staticmethod
-    def LimitIfTouched(action:str, quantity:Decimal, limitPrice:float, 
-                        triggerPrice:float):
-    
+    def LimitIfTouched(
+        action: str, quantity: Decimal, limitPrice: float, triggerPrice: float
+    ):
         # ! [limitiftouched]
         order = Order()
         order.action = action
@@ -430,16 +424,15 @@ class OrderSamples:
         order.auxPrice = triggerPrice
         # ! [limitiftouched]
         return order
-    
 
     """ <summary>
     #/ A Limit-on-close (LOC) order will be submitted at the close and will execute if the closing price is at or better than the submitted 
     #/ limit price.
     #/ Products: CFD, FUT, STK, WAR
     </summary>"""
+
     @staticmethod
-    def LimitOnClose(action:str, quantity:Decimal, limitPrice:float):
-    
+    def LimitOnClose(action: str, quantity: Decimal, limitPrice: float):
         # ! [limitonclose]
         order = Order()
         order.action = action
@@ -448,16 +441,15 @@ class OrderSamples:
         order.lmtPrice = limitPrice
         # ! [limitonclose]
         return order
-    
 
     """ <summary>
     #/ A Limit-on-Open (LOO) order combines a limit order with the OPG time in force to create an order that is submitted at the market's open, 
     #/ and that will only execute at the specified limit price or better. Orders are filled in accordance with specific exchange rules.
     #/ Products: CFD, STK, OPT, WAR
     </summary>"""
+
     @staticmethod
-    def LimitOnOpen(action:str, quantity:Decimal, limitPrice:float):
-    
+    def LimitOnOpen(action: str, quantity: Decimal, limitPrice: float):
         # ! [limitonopen]
         order = Order()
         order.action = action
@@ -467,7 +459,6 @@ class OrderSamples:
         order.lmtPrice = limitPrice
         # ! [limitonopen]
         return order
-    
 
     """ <summary>
     #/ Passive Relative orders provide a means for traders to seek a less aggressive price than the National Best Bid and Offer (NBBO) while 
@@ -481,9 +472,9 @@ class OrderSamples:
     #/ the bid and the Relative adds the offset to the bid.
     #/ Products: STK, WAR
     </summary>"""
+
     @staticmethod
-    def PassiveRelative(action:str, quantity:Decimal, offset:float):
-    
+    def PassiveRelative(action: str, quantity: Decimal, offset: float):
         # ! [passive_relative]
         order = Order()
         order.action = action
@@ -492,7 +483,6 @@ class OrderSamples:
         order.auxPrice = offset
         # ! [passive_relative]
         return order
-    
 
     """ <summary>
     #/ A pegged-to-midpoorder:provides:int a means for traders to seek a price at the midpoof:the:int National Best Bid and Offer (NBBO). 
@@ -501,9 +491,11 @@ class OrderSamples:
     #/ to be more aggressive. If the market moves in the opposite direction, the order will execute.
     #/ Products: STK
     </summary>"""
+
     @staticmethod
-    def PeggedToMidpoint(action:str, quantity:Decimal, offset:float, limitPrice:float):
-    
+    def PeggedToMidpoint(
+        action: str, quantity: Decimal, offset: float, limitPrice: float
+    ):
         # ! [pegged_midpoint]
         order = Order()
         order.action = action
@@ -513,7 +505,6 @@ class OrderSamples:
         order.lmtPrice = limitPrice
         # ! [pegged_midpoint]
         return order
-    
 
     """ <summary>
     #/ Bracket orders are designed to help limit your loss and lock in a profit by "bracketing" an order with two opposite-side orders. 
@@ -521,21 +512,26 @@ class OrderSamples:
     #/ stop order and a low side buy limit order.
     #/ Products: CFD, BAG, FOP, CASH, FUT, OPT, STK, WAR
     </summary>"""
+
     #! [bracket]
     @staticmethod
-    def BracketOrder(parentOrderId:int, action:str, quantity:Decimal, 
-                     limitPrice:float, takeProfitLimitPrice:float, 
-                     stopLossPrice:float):
-    
-        #This will be our main or "parent" order
+    def BracketOrder(
+        parentOrderId: int,
+        action: str,
+        quantity: Decimal,
+        limitPrice: float,
+        takeProfitLimitPrice: float,
+        stopLossPrice: float,
+    ):
+        # This will be our main or "parent" order
         parent = Order()
         parent.orderId = parentOrderId
         parent.action = action
         parent.orderType = "LMT"
         parent.totalQuantity = quantity
         parent.lmtPrice = limitPrice
-        #The parent and children orders will need this attribute set to False to prevent accidental executions.
-        #The LAST CHILD will have it set to True, 
+        # The parent and children orders will need this attribute set to False to prevent accidental executions.
+        # The LAST CHILD will have it set to True,
         parent.transmit = False
 
         takeProfit = Order()
@@ -551,17 +547,17 @@ class OrderSamples:
         stopLoss.orderId = parent.orderId + 2
         stopLoss.action = "SELL" if action == "BUY" else "BUY"
         stopLoss.orderType = "STP"
-        #Stop trigger price
+        # Stop trigger price
         stopLoss.auxPrice = stopLossPrice
         stopLoss.totalQuantity = quantity
         stopLoss.parentId = parentOrderId
-        #In this case, the low side order will be the last child being sent. Therefore, it needs to set this attribute to True 
-        #to activate all its predecessors
+        # In this case, the low side order will be the last child being sent. Therefore, it needs to set this attribute to True
+        # to activate all its predecessors
         stopLoss.transmit = True
 
         bracketOrder = [parent, takeProfit, stopLoss]
         return bracketOrder
-    
+
     #! [bracket]
 
     """ <summary>
@@ -570,9 +566,9 @@ class OrderSamples:
     #/ partially filled, the remainder of the order is canceled and re-submitted as a limit order with the limit price equal to the price 
     #/ at which the filled portion of the order executed.
     </summary>"""
+
     @staticmethod
-    def MarketToLimit(action:str, quantity:Decimal):
-    
+    def MarketToLimit(action: str, quantity: Decimal):
         # ! [markettolimit]
         order = Order()
         order.action = action
@@ -580,7 +576,6 @@ class OrderSamples:
         order.totalQuantity = quantity
         # ! [markettolimit]
         return order
-    
 
     """ <summary>
     #/ This order type is useful for futures traders using Globex. A Market with Protection order is a market order that will be cancelled and 
@@ -588,9 +583,9 @@ class OrderSamples:
     #/ close to the current market price, slightly higher for a sell order and lower for a buy order.
     #/ Products: FUT, FOP
     </summary>"""
+
     @staticmethod
-    def MarketWithProtection(action:str, quantity:Decimal):
-    
+    def MarketWithProtection(action: str, quantity: Decimal):
         # ! [marketwithprotection]
         order = Order()
         order.action = action
@@ -598,7 +593,6 @@ class OrderSamples:
         order.totalQuantity = quantity
         # ! [marketwithprotection]
         return order
-    
 
     """ <summary>
     #/ A Stop order is an instruction to submit a buy or sell market order if and when the user-specified stop trigger price is attained or 
@@ -608,9 +602,9 @@ class OrderSamples:
     #/ profit on a short sale.
     #/ Products: CFD, BAG, CASH, FUT, FOP, OPT, STK, WAR
     </summary>"""
+
     @staticmethod
-    def Stop(action:str, quantity:Decimal, stopPrice:float):
-    
+    def Stop(action: str, quantity: Decimal, stopPrice: float):
         # ! [stop]
         order = Order()
         order.action = action
@@ -619,7 +613,6 @@ class OrderSamples:
         order.totalQuantity = quantity
         # ! [stop]
         return order
-    
 
     """ <summary>
     #/ A Stop-Limit order is an instruction to submit a buy or sell limit order when the user-specified stop trigger price is attained or 
@@ -627,9 +620,9 @@ class OrderSamples:
     #/ price, the order becomes executable and enters the market as a limit order, which is an order to buy or sell at a specified price or better.
     #/ Products: CFD, CASH, FUT, FOP, OPT, STK, WAR
     </summary>"""
+
     @staticmethod
-    def StopLimit(action:str, quantity:Decimal, limitPrice:float, stopPrice:float):
-    
+    def StopLimit(action: str, quantity: Decimal, limitPrice: float, stopPrice: float):
         # ! [stoplimit]
         order = Order()
         order.action = action
@@ -639,7 +632,6 @@ class OrderSamples:
         order.auxPrice = stopPrice
         # ! [stoplimit]
         return order
-    
 
     """ <summary>
     #/ A Stop with Protection order combines the functionality of a stop limit order with a market with protection order. The order is set 
@@ -649,9 +641,9 @@ class OrderSamples:
     #/ trigger price +/- the protection points.
     #/ Products: FUT
     </summary>"""
+
     @staticmethod
-    def StopWithProtection(action:str, quantity:Decimal, stopPrice:float):
-    
+    def StopWithProtection(action: str, quantity: Decimal, stopPrice: float):
         # ! [stopwithprotection]
         order = Order()
         order.totalQuantity = quantity
@@ -660,7 +652,6 @@ class OrderSamples:
         order.auxPrice = stopPrice
         # ! [stopwithprotection]
         return order
-    
 
     """ <summary>
     #/ A sell trailing stop order sets the stop price at a fixed amount below the market price with an attached "trailing" amount. As the 
@@ -670,10 +661,11 @@ class OrderSamples:
     #/ trailing stop orders, and are most appropriate for use in falling markets.
     #/ Products: CFD, CASH, FOP, FUT, OPT, STK, WAR
     </summary>"""
+
     @staticmethod
-    def TrailingStop(action:str, quantity:Decimal, trailingPercent:float,
-                     trailStopPrice:float):
-    
+    def TrailingStop(
+        action: str, quantity: Decimal, trailingPercent: float, trailStopPrice: float
+    ):
         # ! [trailingstop]
         order = Order()
         order.action = action
@@ -683,7 +675,6 @@ class OrderSamples:
         order.trailStopPrice = trailStopPrice
         # ! [trailingstop]
         return order
-    
 
     """ <summary>
     #/ A trailing stop limit order is designed to allow an investor to specify a limit on the maximum possible loss, without setting a limit 
@@ -695,10 +686,15 @@ class OrderSamples:
     #/ and is generally used in falling markets.
     #/ Products: BOND, CFD, CASH, FUT, FOP, OPT, STK, WAR
     </summary>"""
+
     @staticmethod
-    def TrailingStopLimit(action:str, quantity:Decimal, lmtPriceOffset:float, 
-                          trailingAmount:float, trailStopPrice:float):
-    
+    def TrailingStopLimit(
+        action: str,
+        quantity: Decimal,
+        lmtPriceOffset: float,
+        trailingAmount: float,
+        trailStopPrice: float,
+    ):
         # ! [trailingstoplimit]
         order = Order()
         order.action = action
@@ -709,7 +705,6 @@ class OrderSamples:
         order.auxPrice = trailingAmount
         # ! [trailingstoplimit]
         return order
-    
 
     """ <summary>
     #/ Create combination orders that include options, stock and futures legs (stock legs can be included if the order is routed 
@@ -718,10 +713,11 @@ class OrderSamples:
     #/ best execution.
     #/ Products: OPT, STK, FUT
     </summary>"""
+
     @staticmethod
-    def ComboLimitOrder(action:str, quantity:Decimal, limitPrice:float, 
-                        nonGuaranteed:bool):
-    
+    def ComboLimitOrder(
+        action: str, quantity: Decimal, limitPrice: float, nonGuaranteed: bool
+    ):
         # ! [combolimit]
         order = Order()
         order.action = action
@@ -729,13 +725,11 @@ class OrderSamples:
         order.totalQuantity = quantity
         order.lmtPrice = limitPrice
         if nonGuaranteed:
-        
             order.smartComboRoutingParams = []
             order.smartComboRoutingParams.append(TagValue("NonGuaranteed", "1"))
-        
+
         # ! [combolimit]
         return order
-    
 
     """ <summary>
     #/ Create combination orders that include options, stock and futures legs (stock legs can be included if the order is routed 
@@ -744,22 +738,20 @@ class OrderSamples:
     #/ best execution.
     #/ Products: OPT, STK, FUT
     </summary>"""
+
     @staticmethod
-    def ComboMarketOrder(action:str, quantity:Decimal, nonGuaranteed:bool):
-    
+    def ComboMarketOrder(action: str, quantity: Decimal, nonGuaranteed: bool):
         # ! [combomarket]
         order = Order()
         order.action = action
         order.orderType = "MKT"
         order.totalQuantity = quantity
         if nonGuaranteed:
-        
             order.smartComboRoutingParams = []
             order.smartComboRoutingParams.append(TagValue("NonGuaranteed", "1"))
-        
+
         # ! [combomarket]
         return order
-    
 
     """ <summary>
     #/ Create combination orders that include options, stock and futures legs (stock legs can be included if the order is routed 
@@ -768,10 +760,11 @@ class OrderSamples:
     #/ best execution.
     #/ Products: OPT, STK, FUT
     </summary>"""
+
     @staticmethod
-    def LimitOrderForComboWithLegPrices(action:str, quantity:Decimal,
-                                        legPrices:list, nonGuaranteed:bool):
-    
+    def LimitOrderForComboWithLegPrices(
+        action: str, quantity: Decimal, legPrices: list, nonGuaranteed: bool
+    ):
         # ! [limitordercombolegprices]
         order = Order()
         order.action = action
@@ -779,18 +772,16 @@ class OrderSamples:
         order.totalQuantity = quantity
         order.orderComboLegs = []
         for price in legPrices:
-        
             comboLeg = OrderComboLeg()
             comboLeg.price = price
             order.orderComboLegs.append(comboLeg)
-                   
+
         if nonGuaranteed:
             order.smartComboRoutingParams = []
             order.smartComboRoutingParams.append(TagValue("NonGuaranteed", "1"))
-        
+
         # ! [limitordercombolegprices]
         return order
-    
 
     """ <summary>
     #/ Create combination orders that include options, stock and futures legs (stock legs can be included if the order is routed 
@@ -799,10 +790,11 @@ class OrderSamples:
     #/ best execution.
     #/ Products: OPT, STK, FUT
     </summary>"""
+
     @staticmethod
-    def RelativeLimitCombo(action:str, quantity:Decimal, limitPrice:float, 
-                           nonGuaranteed:bool):
-    
+    def RelativeLimitCombo(
+        action: str, quantity: Decimal, limitPrice: float, nonGuaranteed: bool
+    ):
         # ! [relativelimitcombo]
         order = Order()
         order.action = action
@@ -810,13 +802,11 @@ class OrderSamples:
         order.orderType = "REL + LMT"
         order.lmtPrice = limitPrice
         if nonGuaranteed:
-        
             order.smartComboRoutingParams = []
             order.smartComboRoutingParams.append(TagValue("NonGuaranteed", "1"))
-        
+
         # ! [relativelimitcombo]
         return order
-    
 
     """ <summary>
     #/ Create combination orders that include options, stock and futures legs (stock legs can be included if the order is routed 
@@ -825,22 +815,20 @@ class OrderSamples:
     #/ best execution.
     #/ Products: OPT, STK, FUT
     </summary>"""
+
     @staticmethod
-    def RelativeMarketCombo(action:str, quantity:Decimal, nonGuaranteed:bool):
-    
+    def RelativeMarketCombo(action: str, quantity: Decimal, nonGuaranteed: bool):
         # ! [relativemarketcombo]
         order = Order()
         order.action = action
         order.totalQuantity = quantity
         order.orderType = "REL + MKT"
         if nonGuaranteed:
-        
             order.smartComboRoutingParams = []
             order.smartComboRoutingParams.append(TagValue("NonGuaranteed", "1"))
-        
+
         # ! [relativemarketcombo]
         return order
-    
 
     """ <summary>
     #/ One-Cancels All (OCA) order type allows an investor to place multiple and possibly unrelated orders assigned to a group. The aim is 
@@ -854,17 +842,16 @@ class OrderSamples:
     #/ of taking on a single position.
     #/ Products: BOND, CASH, FUT, FOP, STK, OPT, WAR
     </summary>"""
+
     # ! [oca]
     @staticmethod
-    def OneCancelsAll(ocaGroup:str, ocaOrders:ListOfOrder, ocaType:int):
-    
+    def OneCancelsAll(ocaGroup: str, ocaOrders: ListOfOrder, ocaType: int):
         for o in ocaOrders:
-        
             o.ocaGroup = ocaGroup
             o.ocaType = ocaType
-        
+
         return ocaOrders
-    
+
     # ! [oca]
 
     """ <summary>
@@ -878,247 +865,263 @@ class OrderSamples:
     #/ receive.
     #/ Products: FOP, OPT
     </summary>"""
+
     @staticmethod
-    def Volatility(action:str, quantity:Decimal, volatilityPercent:float, 
-                   volatilityType:int):
-    
+    def Volatility(
+        action: str, quantity: Decimal, volatilityPercent: float, volatilityType: int
+    ):
         # ! [volatility]
         order = Order()
         order.action = action
         order.orderType = "VOL"
         order.totalQuantity = quantity
-        order.volatility = volatilityPercent#Expressed in percentage (40%)
-        order.volatilityType = volatilityType# 1=daily, 2=annual
+        order.volatility = volatilityPercent  # Expressed in percentage (40%)
+        order.volatilityType = volatilityType  # 1=daily, 2=annual
         # ! [volatility]
         return order
-    
 
     #! [fhedge]
     @staticmethod
-    def MarketFHedge(parentOrderId:int, action:str):
-    
-        #FX Hedge orders can only have a quantity of 0
+    def MarketFHedge(parentOrderId: int, action: str):
+        # FX Hedge orders can only have a quantity of 0
         order = OrderSamples.MarketOrder(action, 0)
         order.parentId = parentOrderId
         order.hedgeType = "F"
         return order
-    
+
     #! [fhedge]
 
     @staticmethod
-    def PeggedToBenchmark(action:str, quantity:Decimal, startingPrice:float, 
-                           peggedChangeAmountDecrease:bool, 
-                           peggedChangeAmount:float,
-                           referenceChangeAmount:float, referenceConId:int, 
-                           referenceExchange:str, stockReferencePrice:float,  
-                           referenceContractLowerRange:float, 
-                           referenceContractUpperRange:float):
-    
+    def PeggedToBenchmark(
+        action: str,
+        quantity: Decimal,
+        startingPrice: float,
+        peggedChangeAmountDecrease: bool,
+        peggedChangeAmount: float,
+        referenceChangeAmount: float,
+        referenceConId: int,
+        referenceExchange: str,
+        stockReferencePrice: float,
+        referenceContractLowerRange: float,
+        referenceContractUpperRange: float,
+    ):
         #! [pegged_benchmark]
         order = Order()
         order.orderType = "PEG BENCH"
-        #BUY or SELL
+        # BUY or SELL
         order.action = action
         order.totalQuantity = quantity
-        #Beginning with price...
+        # Beginning with price...
         order.startingPrice = startingPrice
-        #increase/decrease price..
+        # increase/decrease price..
         order.isPeggedChangeAmountDecrease = peggedChangeAmountDecrease
-        #by... (and likewise for price moving in opposite direction)
+        # by... (and likewise for price moving in opposite direction)
         order.peggedChangeAmount = peggedChangeAmount
-        #whenever there is a price change of...
+        # whenever there is a price change of...
         order.referenceChangeAmount = referenceChangeAmount
-        #in the reference contract...
+        # in the reference contract...
         order.referenceContractId = referenceConId
-        #being traded at...
+        # being traded at...
         order.referenceExchange = referenceExchange
-        #starting reference price is...
+        # starting reference price is...
         order.stockRefPrice = stockReferencePrice
-        #Keep order active as long as reference contract trades between...
+        # Keep order active as long as reference contract trades between...
         order.stockRangeLower = referenceContractLowerRange
-        #and...
+        # and...
         order.stockRangeUpper = referenceContractUpperRange
         #! [pegged_benchmark]
         return order
-    
-    
 
     @staticmethod
-    def AttachAdjustableToStop(parent:Order , attachedOrderStopPrice:float, 
-                               triggerPrice:float, adjustStopPrice:float):
-    
+    def AttachAdjustableToStop(
+        parent: Order,
+        attachedOrderStopPrice: float,
+        triggerPrice: float,
+        adjustStopPrice: float,
+    ):
         #! [adjustable_stop]
         # Attached order is a conventional STP order in opposite direction
-        order = OrderSamples.Stop("SELL" if parent.action == "BUY" else "BUY",
-                     parent.totalQuantity, attachedOrderStopPrice)
+        order = OrderSamples.Stop(
+            "SELL" if parent.action == "BUY" else "BUY",
+            parent.totalQuantity,
+            attachedOrderStopPrice,
+        )
         order.parentId = parent.orderId
-        #When trigger price is penetrated
+        # When trigger price is penetrated
         order.triggerPrice = triggerPrice
-        #The parent order will be turned into a STP order
+        # The parent order will be turned into a STP order
         order.adjustedOrderType = "STP"
-        #With the given STP price
+        # With the given STP price
         order.adjustedStopPrice = adjustStopPrice
         #! [adjustable_stop]
         return order
-    
 
     @staticmethod
-    def AttachAdjustableToStopLimit(parent:Order, attachedOrderStopPrice:float, 
-                                    triggerPrice:float, adjustedStopPrice:float, 
-                                    adjustedStopLimitPrice:float):
-    
+    def AttachAdjustableToStopLimit(
+        parent: Order,
+        attachedOrderStopPrice: float,
+        triggerPrice: float,
+        adjustedStopPrice: float,
+        adjustedStopLimitPrice: float,
+    ):
         #! [adjustable_stop_limit]
-        #Attached order is a conventional STP order
-        order = OrderSamples.Stop("SELL" if parent.action == "BUY" else "BUY",
-                                  parent.totalQuantity, attachedOrderStopPrice)
+        # Attached order is a conventional STP order
+        order = OrderSamples.Stop(
+            "SELL" if parent.action == "BUY" else "BUY",
+            parent.totalQuantity,
+            attachedOrderStopPrice,
+        )
         order.parentId = parent.orderId
-        #When trigger price is penetrated
+        # When trigger price is penetrated
         order.triggerPrice = triggerPrice
-        #The parent order will be turned into a STP LMT order
+        # The parent order will be turned into a STP LMT order
         order.adjustedOrderType = "STP LMT"
-        #With the given stop price
+        # With the given stop price
         order.adjustedStopPrice = adjustedStopPrice
-        #And the given limit price
+        # And the given limit price
         order.adjustedStopLimitPrice = adjustedStopLimitPrice
         #! [adjustable_stop_limit]
         return order
 
-
     @staticmethod
-    def  AttachAdjustableToTrail(parent:Order, attachedOrderStopPrice:float, 
-                                 triggerPrice:float, adjustedStopPrice:float, 
-                                 adjustedTrailAmount:float, trailUnit:int):
+    def AttachAdjustableToTrail(
+        parent: Order,
+        attachedOrderStopPrice: float,
+        triggerPrice: float,
+        adjustedStopPrice: float,
+        adjustedTrailAmount: float,
+        trailUnit: int,
+    ):
         #! [adjustable_trail]
-        #Attached order is a conventional STP order
-        order = OrderSamples.Stop("SELL" if parent.action == "BUY" else "BUY",
-                     parent.totalQuantity, attachedOrderStopPrice)
+        # Attached order is a conventional STP order
+        order = OrderSamples.Stop(
+            "SELL" if parent.action == "BUY" else "BUY",
+            parent.totalQuantity,
+            attachedOrderStopPrice,
+        )
         order.parentId = parent.orderId
-        #When trigger price is penetrated
+        # When trigger price is penetrated
         order.triggerPrice = triggerPrice
-        #The parent order will be turned into a TRAIL order
+        # The parent order will be turned into a TRAIL order
         order.adjustedOrderType = "TRAIL"
-        #With a stop price of...
+        # With a stop price of...
         order.adjustedStopPrice = adjustedStopPrice
-        #trailing by and amount (0) or a percent (100)...
+        # trailing by and amount (0) or a percent (100)...
         order.adjustableTrailingUnit = trailUnit
-        #of...
+        # of...
         order.adjustedTrailingAmount = adjustedTrailAmount
-        #! [adjustable_trail]        
+        #! [adjustable_trail]
         return order
- 
 
     @staticmethod
-    def PriceCondition(triggerMethod:int, conId:int, exchange:str, price:float, 
-                        isMore:bool, isConjunction:bool):
-    
+    def PriceCondition(
+        triggerMethod: int,
+        conId: int,
+        exchange: str,
+        price: float,
+        isMore: bool,
+        isConjunction: bool,
+    ):
         #! [price_condition]
-        #Conditions have to be created via the OrderCondition.create 
+        # Conditions have to be created via the OrderCondition.create
         priceCondition = order_condition.Create(OrderCondition.Price)
-        #When this contract...
+        # When this contract...
         priceCondition.conId = conId
-        #traded on this exchange
+        # traded on this exchange
         priceCondition.exchange = exchange
-        #has a price above/below
+        # has a price above/below
         priceCondition.isMore = isMore
         priceCondition.triggerMethod = triggerMethod
-        #this quantity
+        # this quantity
         priceCondition.price = price
-        #AND | OR next condition (will be ignored if no more conditions are added)
+        # AND | OR next condition (will be ignored if no more conditions are added)
         priceCondition.isConjunctionConnection = isConjunction
         #! [price_condition]
         return priceCondition
-    
 
     @staticmethod
-    def ExecutionCondition(symbol:str, secType:str, exchange:str, 
-                           isConjunction:bool):
-    
+    def ExecutionCondition(
+        symbol: str, secType: str, exchange: str, isConjunction: bool
+    ):
         #! [execution_condition]
         execCondition = order_condition.Create(OrderCondition.Execution)
-        #When an execution on symbol
+        # When an execution on symbol
         execCondition.symbol = symbol
-        #at exchange
+        # at exchange
         execCondition.exchange = exchange
-        #for this secType
+        # for this secType
         execCondition.secType = secType
-        #AND | OR next condition (will be ignored if no more conditions are added)
+        # AND | OR next condition (will be ignored if no more conditions are added)
         execCondition.isConjunctionConnection = isConjunction
         #! [execution_condition]
         return execCondition
-    
 
     @staticmethod
-    def MarginCondition(percent:int, isMore:bool, isConjunction:bool):
-    
+    def MarginCondition(percent: int, isMore: bool, isConjunction: bool):
         #! [margin_condition]
         marginCondition = order_condition.Create(OrderCondition.Margin)
-        #If margin is above/below
+        # If margin is above/below
         marginCondition.isMore = isMore
-        #given percent
+        # given percent
         marginCondition.percent = percent
-        #AND | OR next condition (will be ignored if no more conditions are added)
+        # AND | OR next condition (will be ignored if no more conditions are added)
         marginCondition.isConjunctionConnection = isConjunction
         #! [margin_condition]
         return marginCondition
-    
 
     @staticmethod
-    def PercentageChangeCondition(pctChange:float, conId:int, exchange:str, 
-                                  isMore:bool, isConjunction:bool):
-    
+    def PercentageChangeCondition(
+        pctChange: float, conId: int, exchange: str, isMore: bool, isConjunction: bool
+    ):
         #! [percentage_condition]
         pctChangeCondition = order_condition.Create(OrderCondition.PercentChange)
-        #If there is a price percent change measured against last close price above or below...
+        # If there is a price percent change measured against last close price above or below...
         pctChangeCondition.isMore = isMore
-        #this amount...
+        # this amount...
         pctChangeCondition.changePercent = pctChange
-        #on this contract
+        # on this contract
         pctChangeCondition.conId = conId
-        #when traded on this exchange...
+        # when traded on this exchange...
         pctChangeCondition.exchange = exchange
-        #AND | OR next condition (will be ignored if no more conditions are added)
+        # AND | OR next condition (will be ignored if no more conditions are added)
         pctChangeCondition.isConjunctionConnection = isConjunction
         #! [percentage_condition]
         return pctChangeCondition
-    
 
     @staticmethod
-    def TimeCondition(time:str, isMore:bool, isConjunction:bool):
-    
+    def TimeCondition(time: str, isMore: bool, isConjunction: bool):
         #! [time_condition]
         timeCondition = order_condition.Create(OrderCondition.Time)
-        #Before or after...
+        # Before or after...
         timeCondition.isMore = isMore
-        #this time..
+        # this time..
         timeCondition.time = time
-        #AND | OR next condition (will be ignored if no more conditions are added)     
+        # AND | OR next condition (will be ignored if no more conditions are added)
         timeCondition.isConjunctionConnection = isConjunction
         #! [time_condition]
         return timeCondition
-    
 
     @staticmethod
-    def VolumeCondition(conId:int, exchange:str, isMore:bool, volume:int, 
-                        isConjunction:bool):
-    
+    def VolumeCondition(
+        conId: int, exchange: str, isMore: bool, volume: int, isConjunction: bool
+    ):
         #! [volume_condition]
         volCond = order_condition.Create(OrderCondition.Volume)
-        #Whenever contract...
+        # Whenever contract...
         volCond.conId = conId
-        #When traded at
+        # When traded at
         volCond.exchange = exchange
-        #reaches a volume higher/lower
+        # reaches a volume higher/lower
         volCond.isMore = isMore
-        #than this...
+        # than this...
         volCond.volume = volume
-        #AND | OR next condition (will be ignored if no more conditions are added)
+        # AND | OR next condition (will be ignored if no more conditions are added)
         volCond.isConjunctionConnection = isConjunction
         #! [volume_condition]
         return volCond
-        
+
     @staticmethod
-    def LimitIBKRATS(action:str, quantity:Decimal, limitPrice:float):
-    
+    def LimitIBKRATS(action: str, quantity: Decimal, limitPrice: float):
         # ! [limit_ibkrats]
         order = Order()
         order.action = action
@@ -1130,8 +1133,9 @@ class OrderSamples:
         return order
 
     @staticmethod
-    def LimitOrderWithManualOrderTime(action:str, quantity:Decimal, limitPrice:float, manualOrderTime:str):
-
+    def LimitOrderWithManualOrderTime(
+        action: str, quantity: Decimal, limitPrice: float, manualOrderTime: str
+    ):
         # ! [limit_order_with_manual_order_time]
         order = OrderSamples.LimitOrder(action, quantity, limitPrice)
         order.manualOrderTime = manualOrderTime
@@ -1139,8 +1143,15 @@ class OrderSamples:
         return order
 
     @staticmethod
-    def PegBestUpToMidOrder(action:str, quantity:Decimal, limitPrice:float, minTradeQty:int, minCompeteSize:int, midOffsetAtWhole:float, midOffsetAtHalf:float):
-
+    def PegBestUpToMidOrder(
+        action: str,
+        quantity: Decimal,
+        limitPrice: float,
+        minTradeQty: int,
+        minCompeteSize: int,
+        midOffsetAtWhole: float,
+        midOffsetAtHalf: float,
+    ):
         # ! [peg_best_up_to_mid_order]
         order = Order()
         order.action = action
@@ -1157,8 +1168,14 @@ class OrderSamples:
         return order
 
     @staticmethod
-    def PegBestOrder(action:str, quantity:Decimal, limitPrice:float, minTradeQty:int, minCompeteSize:int, competeAgainstBestOffset:float):
-
+    def PegBestOrder(
+        action: str,
+        quantity: Decimal,
+        limitPrice: float,
+        minTradeQty: int,
+        minCompeteSize: int,
+        competeAgainstBestOffset: float,
+    ):
         # ! [peg_best_order]
         order = Order()
         order.action = action
@@ -1173,8 +1190,14 @@ class OrderSamples:
         return order
 
     @staticmethod
-    def PegMidOrder(action:str, quantity:Decimal, limitPrice:float, minTradeQty:int, midOffsetAtWhole:float, midOffsetAtHalf:float):
-
+    def PegMidOrder(
+        action: str,
+        quantity: Decimal,
+        limitPrice: float,
+        minTradeQty: int,
+        midOffsetAtWhole: float,
+        midOffsetAtHalf: float,
+    ):
         # ! [peg_mid_order]
         order = Order()
         order.action = action
@@ -1189,8 +1212,9 @@ class OrderSamples:
         return order
 
     @staticmethod
-    def LimitOrderWithCustomerAccount(action:str, quantity:Decimal, limitPrice:float, customerAccount:str):
-
+    def LimitOrderWithCustomerAccount(
+        action: str, quantity: Decimal, limitPrice: float, customerAccount: str
+    ):
         # ! [limit_order_with_customer_account]
         order = OrderSamples.LimitOrder(action, quantity, limitPrice)
         order.customerAccount = customerAccount
@@ -1198,8 +1222,9 @@ class OrderSamples:
         return order
 
     @staticmethod
-    def LimitOrderWithIncludeOvernight(action:str, quantity:Decimal, limitPrice:float):
-
+    def LimitOrderWithIncludeOvernight(
+        action: str, quantity: Decimal, limitPrice: float
+    ):
         # ! [limit_order_with_include_overnight]
         order = OrderSamples.LimitOrder(action, quantity, limitPrice)
         order.includeOvernight = True
@@ -1222,7 +1247,13 @@ class OrderSamples:
         return orderCancel
 
     @staticmethod
-    def LimitOrderWithCmeTaggingFields(action: str, quantity: Decimal, limitPrice: float, extOperator: str, manualOrderIndicator: int):
+    def LimitOrderWithCmeTaggingFields(
+        action: str,
+        quantity: Decimal,
+        limitPrice: float,
+        extOperator: str,
+        manualOrderIndicator: int,
+    ):
         # ! [limit_order_with_cme_tagging_fields]
         order = OrderSamples.LimitOrder(action, quantity, limitPrice)
         order.extOperator = extOperator
@@ -1238,9 +1269,11 @@ class OrderSamples:
         orderCancel.manualOrderIndicator = manualOrderIndicator
         # ! [order_cancel_with_cme_tagging_fields]
         return orderCancel
-    
+
     @staticmethod
-    def LimitOnCloseOrderWithImbalanceOnly(action:str, quantity:Decimal, limitPrice:float):
+    def LimitOnCloseOrderWithImbalanceOnly(
+        action: str, quantity: Decimal, limitPrice: float
+    ):
         # ! [limit_on_close_order_with_imbalance_only]
         order = Order()
         order.action = action
@@ -1251,9 +1284,10 @@ class OrderSamples:
         # ! [limit_on_close_order_with_imbalance_only]
         return order
 
+
 def Test():
-    os = OrderSamples() # @UnusedVariable
+    os = OrderSamples()  # @UnusedVariable
+
 
 if "__main__" == __name__:
     Test()
-       

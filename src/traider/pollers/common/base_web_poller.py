@@ -1,4 +1,5 @@
 """Reusable components for building web-based pollers."""
+
 from __future__ import annotations
 
 import os
@@ -35,9 +36,11 @@ else:
 
 logger = logging.getLogger(__name__)
 
+
 @dataclass
 class BaseItem:
     """Base item with common fields across all pollers."""
+
     id: str
     title: str
     url: str
@@ -50,12 +53,15 @@ class BaseItem:
         """Parse an ISO-8601 timestamp (e.g. '2025-03-01T14:07:23Z') into a
         timezone-aware UTC datetime instance.
         """
-        return datetime.fromisoformat(ts.replace("Z", "+00:00")).astimezone(timezone.utc)
+        return datetime.fromisoformat(ts.replace("Z", "+00:00")).astimezone(
+            timezone.utc
+        )
 
 
 @dataclass
 class PollerConfig:
     """Configuration for pollers with sensible defaults."""
+
     polling_interval_seconds: int
     user_agent: str
     min_request_interval_sec: float
@@ -66,27 +72,35 @@ class PollerConfig:
 
     @classmethod
     def from_env(
-        cls, 
-        prefix: str, 
-        default_interval: int = 3, 
+        cls,
+        prefix: str,
+        default_interval: int = 3,
         default_user_agent: str = "TraderPoller/1.0 admin@example.com",
-        default_min_interval: float = 0.25
+        default_min_interval: float = 0.25,
     ) -> "PollerConfig":
         """Create config from environment variables with given prefix."""
         return cls(
-            polling_interval_seconds=int(os.getenv(f"{prefix}_POLL_INTERVAL", default_interval)),
+            polling_interval_seconds=int(
+                os.getenv(f"{prefix}_POLL_INTERVAL", default_interval)
+            ),
             user_agent=os.getenv(f"{prefix}_USER_AGENT", default_user_agent),
-            min_request_interval_sec=float(os.getenv(f"{prefix}_MIN_REQUEST_INTERVAL_SEC", default_min_interval)),
+            min_request_interval_sec=float(
+                os.getenv(f"{prefix}_MIN_REQUEST_INTERVAL_SEC", default_min_interval)
+            ),
             jitter_fraction=float(os.getenv(f"{prefix}_JITTER_FRACTION", 0.1)),
-            skip_extraction=os.getenv(f"{prefix}_SKIP_EXTRACTION", "0").lower() in ("1", "true", "yes", "y"),
-            timing_enabled=os.getenv(f"{prefix}_TIMING", "0").lower() in ("1", "true", "yes", "y"),
-            article_timeout_seconds=float(os.getenv(f"{prefix}_ARTICLE_TIMEOUT_SEC", 8.0)),
+            skip_extraction=os.getenv(f"{prefix}_SKIP_EXTRACTION", "0").lower()
+            in ("1", "true", "yes", "y"),
+            timing_enabled=os.getenv(f"{prefix}_TIMING", "0").lower()
+            in ("1", "true", "yes", "y"),
+            article_timeout_seconds=float(
+                os.getenv(f"{prefix}_ARTICLE_TIMEOUT_SEC", 8.0)
+            ),
         )
 
 
 class BasePoller(ABC, Poller[BaseItem]):
     """Abstract base class for all pollers implementing the template method pattern."""
-    
+
     def __init__(
         self,
         config: PollerConfig,
@@ -112,13 +126,13 @@ class BasePoller(ABC, Poller[BaseItem]):
         # Per-poller cache (defaults to global shared cache)
         self.cache = cache if cache is not None else get_shared_cache()
         self.session = build_session(
-            config.user_agent, 
-            config.min_request_interval_sec, 
+            config.user_agent,
+            config.min_request_interval_sec,
             use_cloudscraper,
-            extra_headers
+            extra_headers,
         )
         self.current_interval = float(config.polling_interval_seconds)
-        
+
         # Cache headers for conditional requests
         self.feed_etag: Optional[str] = None
         self.feed_last_modified: Optional[str] = None
@@ -144,7 +158,9 @@ class BasePoller(ABC, Poller[BaseItem]):
         pass
 
     @abstractmethod
-    def parse_items(self, data: Response | Dict[str, Any] | pd.DataFrame) -> List[BaseItem]:
+    def parse_items(
+        self, data: Response | Dict[str, Any] | pd.DataFrame
+    ) -> List[BaseItem]:
         """Parse the fetched data into BaseItem objects."""
         pass
 
@@ -157,7 +173,7 @@ class BasePoller(ABC, Poller[BaseItem]):
         """Process and display new items."""
         if not new_items:
             return
-        
+
         for item in new_items:
             article_text: str | None = None
             if not self.config.skip_extraction:
@@ -165,17 +181,18 @@ class BasePoller(ABC, Poller[BaseItem]):
                     t0 = time.monotonic()
                     article_text = self.extract_article_text(item)
                     t1 = time.monotonic()
-                    
+
                     if self.config.timing_enabled:
                         fetch_ms = (t1 - t0) * 1000.0
                         logger.debug("[TIMING] Article fetch: %.1f ms", fetch_ms)
 
-                    
                 except Exception as article_exc:
-                    logger.exception("[ARTICLE] Error while fetching article: %s", article_exc)
+                    logger.exception(
+                        "[ARTICLE] Error while fetching article: %s", article_exc
+                    )
 
                 item.article_text = article_text
-            
+
             # Emit to sink if configured
             if self._sink is not None:
                 try:
@@ -185,7 +202,9 @@ class BasePoller(ABC, Poller[BaseItem]):
 
     def handle_no_new_items(self) -> None:
         """Handle case when no new items are detected."""
-        logger.debug("No new items detected. Checking again in %.1fs...", self.current_interval)
+        logger.debug(
+            "No new items detected. Checking again in %.1fs...", self.current_interval
+        )
 
     def handle_error(self, exc: Exception) -> None:
         """Handle errors during polling."""
@@ -193,7 +212,7 @@ class BasePoller(ABC, Poller[BaseItem]):
             logger.error("Could not connect to %s. %s", self.name, exc, exc_info=exc)
         else:
             logger.error("An unexpected error occurred: %s", exc, exc_info=exc)
-        
+
     def normalize_timestamp_to_utc_z(self, dt_text: str) -> datetime | None:
         """Normalize timestamp string to a timezone-aware UTC datetime."""
         try:
@@ -219,7 +238,7 @@ class BasePoller(ABC, Poller[BaseItem]):
 
     def run_polling_loop(self) -> None:
         """Main polling loop using template method pattern."""
-        
+
         while True:
             new_items: List[BaseItem] = []
             try:
@@ -227,17 +246,19 @@ class BasePoller(ABC, Poller[BaseItem]):
                 logger.debug("Fetched data: %s", data)
                 items = self.parse_items(data)
                 new_items = filter_new_items(items, self.cache)
-                
+
                 if new_items:
                     self.handle_new_items(new_items)
                     self.current_interval = float(self.config.polling_interval_seconds)
                 else:
                     self.handle_no_new_items()
-                    
+
             except Exception as exc:
                 self.handle_error(exc)
 
             # Sleep with jitter
-            jitter = 1.0 + random.uniform(-self.config.jitter_fraction, self.config.jitter_fraction)
+            jitter = 1.0 + random.uniform(
+                -self.config.jitter_fraction, self.config.jitter_fraction
+            )
             sleep_for = max(1.0, self.current_interval * jitter)
             time.sleep(sleep_for)

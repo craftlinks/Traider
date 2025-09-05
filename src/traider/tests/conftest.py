@@ -6,12 +6,13 @@ from pathlib import Path
 
 from traider.db import database, crud
 
+
 @pytest.fixture
 def tmp_db(tmp_path: Path):
     """
     Pytest fixture that creates a temporary, file-based SQLite database for
     each test function, ensuring test isolation.
-    
+
     It temporarily overrides the main DATABASE_FILE path and yields the path
     to the temporary database file.
     """
@@ -19,7 +20,7 @@ def tmp_db(tmp_path: Path):
     original_db_path = database.DATABASE_FILE
     tmp_db_file = tmp_path / "test_db.sqlite"
     database.DATABASE_FILE = tmp_db_file
-    
+
     # Ensure the schema is created in our new temporary database
     crud.create_tables()
 
@@ -27,6 +28,7 @@ def tmp_db(tmp_path: Path):
 
     # Restore the original database path after the test completes
     database.DATABASE_FILE = original_db_path
+
 
 @pytest.fixture
 def db_connection(tmp_db):

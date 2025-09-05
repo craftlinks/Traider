@@ -18,7 +18,7 @@ from .specialized_pollers import (
 __all__ = [
     # Base classes
     "BasePoller",
-    "BaseItem", 
+    "BaseItem",
     "PollerConfig",
     # Utilities
     "build_session",
@@ -28,7 +28,7 @@ __all__ = [
     # Specialized pollers
     "FeedPoller",
     "AtomFeedPoller",
-    "RSSFeedPoller", 
+    "RSSFeedPoller",
     "HTMLPoller",
     "APIPoller",
 ]

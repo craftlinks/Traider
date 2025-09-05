@@ -17,7 +17,11 @@ from typing import Iterator, Optional, List, override
 from collections import defaultdict
 from urllib.parse import urlparse, ParseResult
 
-from crawlee.browsers import BrowserPool, PlaywrightBrowserController, PlaywrightBrowserPlugin
+from crawlee.browsers import (
+    BrowserPool,
+    PlaywrightBrowserController,
+    PlaywrightBrowserPlugin,
+)
 from crawlee import ConcurrencySettings, Request
 import tldextract
 from crawlee.crawlers import PlaywrightCrawler, PlaywrightCrawlingContext
@@ -37,16 +41,25 @@ OUTPUT_DIR = Path(__file__).resolve().parents[3] / "storage" / "company_urls"
 OUTPUT_DIR.mkdir(exist_ok=True)
 
 # Keywords to filter URLs (investor relations, news, press releases, etc.)
-DEFAULT_KEYWORDS = ['invest', 'event', 'news', 'filing', 'press-release', 'press release']
+DEFAULT_KEYWORDS = [
+    "invest",
+    "event",
+    "news",
+    "filing",
+    "press-release",
+    "press release",
+]
 
 # Locks to serialize per-ticker file writes when crawling concurrently
 _ticker_file_locks: dict[str, asyncio.Lock] = {}
+
 
 def _get_ticker_lock(ticker: str) -> asyncio.Lock:
     """Return a process-wide asyncio.Lock for the given ticker."""
     # setdefault ensures only one Lock per ticker
     lock = _ticker_file_locks.setdefault(ticker, asyncio.Lock())
     return lock
+
 
 class CamoufoxPlugin(PlaywrightBrowserPlugin):
     """Example browser plugin that uses Camoufox browser,
@@ -56,7 +69,7 @@ class CamoufoxPlugin(PlaywrightBrowserPlugin):
     @override
     async def new_browser(self) -> PlaywrightBrowserController:
         if not self._playwright:
-            raise RuntimeError('Playwright browser plugin is not initialized.')
+            raise RuntimeError("Playwright browser plugin is not initialized.")
 
         return PlaywrightBrowserController(
             browser=await AsyncNewBrowser(
@@ -69,8 +82,6 @@ class CamoufoxPlugin(PlaywrightBrowserPlugin):
         )
 
 
-
-
 def get_company_website_from_db(ticker: str) -> Optional[str]:
     """Get company website URL from database for a given ticker."""
     logger.debug(f"Fetching website for ticker: {ticker}")
@@ -79,10 +90,10 @@ def get_company_website_from_db(ticker: str) -> Optional[str]:
         with get_db_connection() as conn:
             cursor = conn.execute(
                 "SELECT url FROM urls WHERE company_ticker = ? AND url_type = 'website'",
-                (ticker.upper(),)
+                (ticker.upper(),),
             )
             url_row = cursor.fetchone()
-            website_url = url_row['url'] if url_row else None
+            website_url = url_row["url"] if url_row else None
 
             if website_url:
                 logger.info(f"Found website for {ticker}: {website_url}")
@@ -95,7 +106,6 @@ def get_company_website_from_db(ticker: str) -> Optional[str]:
         return None
 
 
-
 def _check_enqueue_strategy(
     strategy: str,
     *,
@@ -103,25 +113,25 @@ def _check_enqueue_strategy(
     origin_url: ParseResult,
 ) -> bool:
     """Check if a URL matches the enqueue_strategy."""
-    if strategy == 'all':
+    if strategy == "all":
         return True
 
     if origin_url.hostname is None or target_url.hostname is None:
         logger.warning(
-            f'Skipping enqueue: Missing hostname in origin_url = {origin_url.geturl()} or '
-            f'target_url = {target_url.geturl()}'
+            f"Skipping enqueue: Missing hostname in origin_url = {origin_url.geturl()} or "
+            f"target_url = {target_url.geturl()}"
         )
         return False
 
-    if strategy == 'same-hostname':
+    if strategy == "same-hostname":
         return target_url.hostname == origin_url.hostname
 
-    if strategy == 'same-domain':
+    if strategy == "same-domain":
         origin_domain = tldextract.extract(origin_url.hostname).domain
         target_domain = tldextract.extract(target_url.hostname).domain
         return origin_domain == target_domain
 
-    if strategy == 'same-origin':
+    if strategy == "same-origin":
         return (
             target_url.hostname == origin_url.hostname
             and target_url.scheme == origin_url.scheme
@@ -130,18 +140,21 @@ def _check_enqueue_strategy(
 
     return False
 
+
 def _filter_links_iterator(
-        request_iterator: Iterator[str],
-        origin_url: str,
-        enqueue_strategy: str,
-        limit: int | None = None,
-        keywords: Optional[list[str]] = None
+    request_iterator: Iterator[str],
+    origin_url: str,
+    enqueue_strategy: str,
+    limit: int | None = None,
+    keywords: Optional[list[str]] = None,
 ) -> Iterator[str]:
     """Filter requests based on the enqueue strategy and URL patterns."""
     parsed_origin_url = urlparse(origin_url)
 
-    if enqueue_strategy == 'all' and not parsed_origin_url.hostname:
-        logger.warning(f'Skipping enqueue: Missing hostname in origin_url = {origin_url}.')
+    if enqueue_strategy == "all" and not parsed_origin_url.hostname:
+        logger.warning(
+            f"Skipping enqueue: Missing hostname in origin_url = {origin_url}."
+        )
         return
 
     # Emit a `warning` message to the log, only once per call
@@ -151,8 +164,14 @@ def _filter_links_iterator(
         target_url = url
         parsed_target_url = urlparse(target_url)
 
-        if warning_flag and enqueue_strategy != 'all' and not parsed_target_url.hostname:
-            logger.warning(f'Skipping enqueue url: Missing hostname in target_url = {target_url}.')
+        if (
+            warning_flag
+            and enqueue_strategy != "all"
+            and not parsed_target_url.hostname
+        ):
+            logger.warning(
+                f"Skipping enqueue url: Missing hostname in target_url = {target_url}."
+            )
             warning_flag = False
 
         if _check_enqueue_strategy(
@@ -160,9 +179,13 @@ def _filter_links_iterator(
         ):
             # Check if URL (excluding scheme) contains any of the keywords (case-insensitive)
             # This includes both domain and path
-            url_without_scheme = target_url.lower().replace('https://', '').replace('http://', '')
+            url_without_scheme = (
+                target_url.lower().replace("https://", "").replace("http://", "")
+            )
             if keywords:
-                has_keyword = any(keyword.lower() in url_without_scheme for keyword in keywords)
+                has_keyword = any(
+                    keyword.lower() in url_without_scheme for keyword in keywords
+                )
             else:
                 has_keyword = True
 
@@ -176,31 +199,33 @@ def _filter_links_iterator(
             else:
                 logger.debug(f"URL does not contain keywords, skipping: {target_url}")
 
+
 async def extract_company_urls(
     context: PlaywrightCrawlingContext,
-    selector: str = 'a',
-    keywords: Optional[list[str]] = None
+    selector: str = "a",
+    keywords: Optional[list[str]] = None,
 ) -> list[str]:
     """Extract URLs from a company webpage."""
     elements = await context.page.query_selector_all(selector)
 
     links_iterator: Iterator[str] = iter(
-        [url for element in elements if (url := await element.get_attribute('href')) is not None]
+        [
+            url
+            for element in elements
+            if (url := await element.get_attribute("href")) is not None
+        ]
     )
 
     links_iterator = to_absolute_url_iterator(
-        context.request.loaded_url or context.request.url,
-        links_iterator
+        context.request.loaded_url or context.request.url, links_iterator
     )
 
     filtered_links_iterator = _filter_links_iterator(
-        links_iterator,
-        context.request.url,
-        'same-domain',
-        keywords=keywords
+        links_iterator, context.request.url, "same-domain", keywords=keywords
     )
 
     return list(set(filtered_links_iterator))
+
 
 async def crawl_company_website(
     ticker: str,
@@ -213,8 +238,10 @@ async def crawl_company_website(
     logger.info(f"Starting to crawl {ticker} website: {website_url}")
 
     collected_urls = []
-    crawler = PlaywrightCrawler(max_requests_per_crawl=max_requests, browser_pool=BrowserPool(plugins=[CamoufoxPlugin()]))
- 
+    crawler = PlaywrightCrawler(
+        max_requests_per_crawl=max_requests,
+        browser_pool=BrowserPool(plugins=[CamoufoxPlugin()]),
+    )
 
     @crawler.router.default_handler
     async def request_handler(context: PlaywrightCrawlingContext) -> None:
@@ -223,23 +250,23 @@ async def crawl_company_website(
 
         try:
             title = await context.page.title()
-            logger.info(f'Page title: {title}')
+            logger.info(f"Page title: {title}")
         except Exception as e:
-            logger.error(f'Failed to get page title for {url}: {e}')
+            logger.error(f"Failed to get page title for {url}: {e}")
             return
 
         try:
             await context.infinite_scroll()
             logger.debug(f"Completed infinite scroll on {url}")
         except Exception as e:
-            logger.error(f'Failed to perform infinite scroll on {url}: {e}')
+            logger.error(f"Failed to perform infinite scroll on {url}: {e}")
 
         try:
-            links = await extract_company_urls(context, selector='a', keywords=keywords)
+            links = await extract_company_urls(context, selector="a", keywords=keywords)
             logger.info(f"Extracted {len(links)} unique links from {url}")
             collected_urls.extend(links)
         except Exception as e:
-            logger.error(f'Failed to extract links from {url}: {e}')
+            logger.error(f"Failed to extract links from {url}: {e}")
 
     try:
         await crawler.run([website_url])
@@ -254,6 +281,7 @@ async def crawl_company_website(
         logger.error(f"Crawler failed for {ticker} ({website_url}): {e}")
         return []
 
+
 # ---------------------------------------------------------------------------
 # New implementation that uses a SINGLE crawler instance to process multiple
 # company websites concurrently. The crawler relies on the `user_data` field of
@@ -261,6 +289,7 @@ async def crawl_company_website(
 # allows us to aggregate the extracted URLs per-company and write them to disk
 # once the crawl is finished.
 # ---------------------------------------------------------------------------
+
 
 async def crawl_company_websites(
     initial_requests: List[Request],
@@ -317,7 +346,10 @@ async def crawl_company_websites(
         company_name: str | None = context.request.user_data.get("company_name")  # type: ignore[attr-defined]
 
         if ticker is None:
-            logger.warning("Request missing 'ticker' in user_data – skipping page %s", context.request.url)
+            logger.warning(
+                "Request missing 'ticker' in user_data – skipping page %s",
+                context.request.url,
+            )
             return
 
         url = context.request.url
@@ -326,7 +358,9 @@ async def crawl_company_websites(
         # Best-effort scroll in case the page is lazy-loaded.
         try:
             await context.infinite_scroll()
-        except Exception as e:  # pragma: no-cover – network issues are expected occasionally
+        except (
+            Exception
+        ) as e:  # pragma: no-cover – network issues are expected occasionally
             logger.error("[%s] Infinite scroll failed on %s: %s", ticker, url, e)
 
         try:
@@ -337,13 +371,20 @@ async def crawl_company_websites(
             collected_urls[ticker].update(links)
             after_count = len(collected_urls[ticker])
 
-            logger.info("[%s] Extracted %d links on this page; total unique now %d", ticker, len(links), after_count)
+            logger.info(
+                "[%s] Extracted %d links on this page; total unique now %d",
+                ticker,
+                len(links),
+                after_count,
+            )
 
             if after_count > before_count:
                 # Serialize writes per ticker to avoid concurrent file access
                 async with _get_ticker_lock(ticker):
                     # Persist the current snapshot immediately
-                    save_urls_to_file(ticker, sorted(collected_urls[ticker]), company_name)
+                    save_urls_to_file(
+                        ticker, sorted(collected_urls[ticker]), company_name
+                    )
         except Exception as e:  # pragma: no-cover
             logger.error("[%s] Failed to extract links from %s: %s", ticker, url, e)
 
@@ -356,13 +397,16 @@ async def crawl_company_websites(
     # Convert the sets to sorted lists for downstream consumption.
     return {ticker: sorted(urls) for ticker, urls in collected_urls.items()}
 
-def save_urls_to_file(ticker: str, urls: List[str], company_name: Optional[str] = None) -> None:
+
+def save_urls_to_file(
+    ticker: str, urls: List[str], company_name: Optional[str] = None
+) -> None:
     """Save collected URLs to a file for the company."""
     filename = f"{ticker}_urls.txt"
     filepath = OUTPUT_DIR / filename
 
     try:
-        with open(filepath, 'w', encoding='utf-8') as f:
+        with open(filepath, "w", encoding="utf-8") as f:
             f.write(f"# URLs collected for {ticker}")
             if company_name:
                 f.write(f" - {company_name}")
@@ -380,19 +424,20 @@ def save_urls_to_file(ticker: str, urls: List[str], company_name: Optional[str] 
         logger.error(f"Failed to save URLs for {ticker}: {e}")
         print(f"✗ Failed to save URLs for {ticker}: {e}")
 
+
 def get_company_name_from_db(ticker: str) -> Optional[str]:
     """Get company name from database for a given ticker."""
     try:
         with get_db_connection() as conn:
             cursor = conn.execute(
-                "SELECT company_name FROM companies WHERE ticker = ?",
-                (ticker.upper(),)
+                "SELECT company_name FROM companies WHERE ticker = ?", (ticker.upper(),)
             )
             company_row = cursor.fetchone()
-            return company_row['company_name'] if company_row else None
+            return company_row["company_name"] if company_row else None
     except Exception as e:
         logger.error(f"Error fetching company name for {ticker}: {e}")
         return None
+
 
 async def process_earnings_companies(
     tickers: List[str],
@@ -450,7 +495,9 @@ async def process_earnings_companies(
     failed_crawls_total = failed_crawls + (num_with_website - successful_crawls)
 
     logger.info(
-        "Processing complete: %d successful, %d failed", successful_crawls, failed_crawls_total
+        "Processing complete: %d successful, %d failed",
+        successful_crawls,
+        failed_crawls_total,
     )
 
     print("\nProcessing Summary:")
@@ -458,6 +505,7 @@ async def process_earnings_companies(
     print(f"  Successful crawls: {successful_crawls}")
     print(f"  Failed crawls: {failed_crawls_total}")
     print(f"  Output directory: {OUTPUT_DIR}")
+
 
 async def main():
     """Main function to run the earnings URL collection process."""
@@ -468,12 +516,12 @@ async def main():
         "--keywords",
         nargs="*",
         default=DEFAULT_KEYWORDS,
-        help="Keywords to filter URLs (default: investor relations keywords)"
+        help="Keywords to filter URLs (default: investor relations keywords)",
     )
     parser.add_argument(
         "--no-keywords",
         action="store_true",
-        help="Collect all URLs without keyword filtering"
+        help="Collect all URLs without keyword filtering",
     )
 
     args = parser.parse_args()
@@ -503,6 +551,7 @@ async def main():
         tickers=tickers,
         keywords=keywords,
     )
+
 
 if __name__ == "__main__":
     asyncio.run(main())

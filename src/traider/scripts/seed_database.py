@@ -113,7 +113,6 @@ def main(argv: list[str] | None = None) -> None:
     logger.info("Added/updated %d company records.", records_added)
 
 
-
 # if __name__ == "__main__":
 #     import argparse
 #     import json
@@ -151,7 +150,6 @@ def main(argv: list[str] | None = None) -> None:
 #                 # Log already done inside helper
 #                 continue
 #         print("Seed completed.")
-
 
 
 if __name__ == "__main__":

@@ -1,4 +1,5 @@
 """Access Newswire API poller - refactored version."""
+
 from __future__ import annotations
 
 import re
@@ -23,35 +24,41 @@ DEFAULT_PAGE_SIZE: int = 20
 @dataclass
 class ANWItem(BaseItem):
     """Access Newswire specific item with additional fields."""
+
     company: str | None = None
     topics: List[str] | None = None
 
 
 class AccessNewswirePoller(APIPoller):
     """Access Newswire API poller."""
-    
+
     def __init__(self, page_size: int = DEFAULT_PAGE_SIZE):
         config = PollerConfig.from_env(
-            "ANW", 
+            "ANW",
             default_interval=3,
             default_user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-            default_min_interval=0.25
+            default_min_interval=0.25,
         )
-        
+
         # Add page size parameter to API URL
         api_url_with_params = f"{API_URL}?pageindex=0&pageSize={page_size}"
-        
+
         extra_headers = {
             "Accept": "application/json, text/plain, */*",
-            "Accept-Language": "en-US,en;q=0.9", 
+            "Accept-Language": "en-US,en;q=0.9",
             "Referer": urljoin(BASE_URL, "newsroom"),
             "X-Requested-With": "XMLHttpRequest",
             "sec-ch-ua": '"Not/A)Brand";v="8", "Chromium";v="126", "Google Chrome";v="126"',
             "sec-ch-ua-mobile": "?0",
             "sec-ch-ua-platform": '"Windows"',
         }
-        
-        super().__init__(api_url_with_params, config, use_cloudscraper=True, extra_headers=extra_headers)
+
+        super().__init__(
+            api_url_with_params,
+            config,
+            use_cloudscraper=True,
+            extra_headers=extra_headers,
+        )
         # No container-specific extraction; rely on default_simple_text_extractor
 
     def get_poller_name(self) -> str:
@@ -60,7 +67,7 @@ class AccessNewswirePoller(APIPoller):
     def parse_api_items(self, data: Dict[str, Any]) -> List[BaseItem]:
         """Parse Access Newswire API response."""
         items = []
-        
+
         articles = data.get("data", {}).get("articles", [])
         if not isinstance(articles, list):
             return items
@@ -80,7 +87,7 @@ class AccessNewswirePoller(APIPoller):
             except (KeyError, TypeError) as e:
                 logger.warning("Skipping article due to parsing error: %s", e)
                 continue
-                
+
         return items
 
     # Use base APIPoller.extract_article_text with default_simple_text_extractor
@@ -92,7 +99,12 @@ def run_poller(
 ) -> None:
     """Run the Access Newswire poller."""
     import warnings
-    warnings.warn("Access Newswire poller is currently broken and will not run.", RuntimeWarning, stacklevel=2)
+
+    warnings.warn(
+        "Access Newswire poller is currently broken and will not run.",
+        RuntimeWarning,
+        stacklevel=2,
+    )
     return
     # poller = AccessNewswirePoller()
     # poller.run(polling_interval_seconds, user_agent)

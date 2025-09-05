@@ -23,7 +23,6 @@ __all__ = [
     "get_press_releases",
     "get_latest_press_release",
     "get_press_release_content",
-
     # --- Public Dataclasses (Return Types) ---
     "Profile",
     "EarningsEvent",

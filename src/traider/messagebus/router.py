@@ -5,6 +5,7 @@ import asyncio
 import logging
 from datetime import timedelta
 import signal
+
 # ---------------------------------------------------------------------------
 # typing imports
 # ---------------------------------------------------------------------------
@@ -21,15 +22,21 @@ logger = logging.getLogger(__name__)
 MessageHandler = Callable[..., Coroutine[Any, Any, Optional[Any]]]
 ProducerHandler = Callable[..., Coroutine[Any, Any, Any]]
 
+
 class MessageRouter:
     """
     The main orchestrator for defining and running a message-driven application.
     """
+
     def __init__(self, broker: MessageBroker):
         self.broker = broker
         # Registry tuples: (listen_channel, handler, publish_channel, ttl)
-        self._registry: list[tuple[str, MessageHandler, Optional[str], Optional[float | int | timedelta]]] = []
-        self._producers: list[Tuple[ProducerHandler, Optional[str], Optional[float | int | timedelta]]] = []
+        self._registry: list[
+            tuple[str, MessageHandler, Optional[str], Optional[float | int | timedelta]]
+        ] = []
+        self._producers: list[
+            Tuple[ProducerHandler, Optional[str], Optional[float | int | timedelta]]
+        ] = []
         self._shutdown_event: Optional[asyncio.Event] = None
         # Internal barrier used to coordinate initial startup of all nodes.
         self._startup_barrier: Optional[asyncio.Barrier] = None  # not exposed to user
@@ -72,7 +79,10 @@ class MessageRouter:
         publish_to: Optional[str] = None,
         *,
         ttl: float | int | timedelta | None = None,
-    ) -> Callable[[Callable[..., Coroutine[Any, Any, Any]]], Callable[..., Coroutine[Any, Any, Any]]]:
+    ) -> Callable[
+        [Callable[..., Coroutine[Any, Any, Any]]],
+        Callable[..., Coroutine[Any, Any, Any]],
+    ]:
         """Decorate a coroutine as a subscriber or producer.
 
         • If *listen_to* is provided, the function is treated as a subscriber
@@ -90,9 +100,12 @@ class MessageRouter:
             else:
                 self._registry.append((listen_to, func, publish_to, ttl))
             return func
+
         return decorator
 
-    async def _run_worker(self, listen_to: str, handler: MessageHandler, publish_to: Optional[str]):
+    async def _run_worker(
+        self, listen_to: str, handler: MessageHandler, publish_to: Optional[str]
+    ):
         queue = await self.broker.subscribe(listen_to)
         # Signal readiness if a startup barrier is in use.
         if self._startup_barrier is not None:
@@ -144,7 +157,9 @@ class MessageRouter:
                     pass
 
         # Create an internal barrier covering all *registered* nodes (workers + producers)
-        self._startup_barrier = asyncio.Barrier(parties=self.node_count) if self.node_count > 0 else None
+        self._startup_barrier = (
+            asyncio.Barrier(parties=self.node_count) if self.node_count > 0 else None
+        )
 
         if not self._registry and not self._producers:
             logger.warning("No routes registered. Nothing to do.")
@@ -160,14 +175,22 @@ class MessageRouter:
                 task = tg.create_task(self._run_worker(listen_to, handler, publish_to))
                 self._tasks.append(task)
                 if ttl is not None:
-                    seconds = ttl.total_seconds() if isinstance(ttl, timedelta) else float(ttl)
+                    seconds = (
+                        ttl.total_seconds()
+                        if isinstance(ttl, timedelta)
+                        else float(ttl)
+                    )
                     loop.call_later(seconds, task.cancel)
             # Start producers
             for producer, out_channel, ttl in self._producers:
                 task = tg.create_task(self._run_producer(producer, out_channel))
                 self._tasks.append(task)
                 if ttl is not None:
-                    seconds = ttl.total_seconds() if isinstance(ttl, timedelta) else float(ttl)
+                    seconds = (
+                        ttl.total_seconds()
+                        if isinstance(ttl, timedelta)
+                        else float(ttl)
+                    )
                     loop.call_later(seconds, task.cancel)
 
             # If there is no startup barrier, the system is ready immediately.

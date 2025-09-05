@@ -39,7 +39,7 @@ def get_db_connection() -> sqlite3.Connection:
 def create_tables(conn: Optional[sqlite3.Connection] = None) -> None:
     """
     Create all database tables by executing the schema.sql script.
-    
+
     This function is idempotent due to the 'IF NOT EXISTS' clauses in the schema.
     """
     owns_connection = conn is None
@@ -50,7 +50,7 @@ def create_tables(conn: Optional[sqlite3.Connection] = None) -> None:
         logger.info("Applying database schema from %s", SCHEMA_FILE)
         with open(SCHEMA_FILE, "r") as f:
             schema_sql = f.read()
-        
+
         # Use executescript to run all statements in the .sql file
         conn.cursor().executescript(schema_sql)
         conn.commit()
@@ -58,7 +58,7 @@ def create_tables(conn: Optional[sqlite3.Connection] = None) -> None:
     except sqlite3.Error as e:
         logger.error("Failed to apply database schema: %s", e)
         if owns_connection:
-            conn.rollback() # Rollback if we own the connection
+            conn.rollback()  # Rollback if we own the connection
         raise
     finally:
         if owns_connection:

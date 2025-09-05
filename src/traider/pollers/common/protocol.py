@@ -6,6 +6,7 @@ from typing import Any, Callable, Protocol, TypeVar
 # This could be a BaseItem, an EarningsEvent, or any other dataclass/object.
 ItemT = TypeVar("ItemT", covariant=True)
 
+
 class Poller(Protocol[ItemT]):
     """
     A protocol defining the essential contract for any poller.

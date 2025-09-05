@@ -15,6 +15,7 @@ message use the 'unified version': the agreed up min version of both
 server and client.
 
 """
+
 import logging
 from decimal import Decimal
 
@@ -54,16 +55,24 @@ from ibapi.protobuf.OrderStatus_pb2 import OrderStatus as OrderStatusProto
 from ibapi.protobuf.OpenOrder_pb2 import OpenOrder as OpenOrderProto
 from ibapi.protobuf.OpenOrdersEnd_pb2 import OpenOrdersEnd as OpenOrdersEndProto
 from ibapi.protobuf.ErrorMessage_pb2 import ErrorMessage as ErrorMessageProto
-from ibapi.protobuf.ExecutionDetails_pb2 import ExecutionDetails as ExecutionDetailsProto
-from ibapi.protobuf.ExecutionDetailsEnd_pb2 import ExecutionDetailsEnd as ExecutionDetailsEndProto
+from ibapi.protobuf.ExecutionDetails_pb2 import (
+    ExecutionDetails as ExecutionDetailsProto,
+)
+from ibapi.protobuf.ExecutionDetailsEnd_pb2 import (
+    ExecutionDetailsEnd as ExecutionDetailsEndProto,
+)
 from ibapi.protobuf.CompletedOrder_pb2 import CompletedOrder as CompletedOrderProto
-from ibapi.protobuf.CompletedOrdersEnd_pb2 import CompletedOrdersEnd as CompletedOrdersEndProto
+from ibapi.protobuf.CompletedOrdersEnd_pb2 import (
+    CompletedOrdersEnd as CompletedOrdersEndProto,
+)
 from ibapi.protobuf.OrderBound_pb2 import OrderBound as OrderBoundProto
 from ibapi.protobuf.ContractData_pb2 import ContractData as ContractDataProto
 from ibapi.protobuf.ContractDataEnd_pb2 import ContractDataEnd as ContractDataEndProto
 from ibapi.protobuf.TickPrice_pb2 import TickPrice as TickPriceProto
 from ibapi.protobuf.TickSize_pb2 import TickSize as TickSizeProto
-from ibapi.protobuf.TickOptionComputation_pb2 import TickOptionComputation as TickOptionComputationProto
+from ibapi.protobuf.TickOptionComputation_pb2 import (
+    TickOptionComputation as TickOptionComputationProto,
+)
 from ibapi.protobuf.TickGeneric_pb2 import TickGeneric as TickGenericProto
 from ibapi.protobuf.TickString_pb2 import TickString as TickStringProto
 from ibapi.protobuf.TickSnapshotEnd_pb2 import TickSnapshotEnd as TickSnapshotEndProto
@@ -73,26 +82,44 @@ from ibapi.protobuf.MarketDataType_pb2 import MarketDataType as MarketDataTypePr
 from ibapi.protobuf.TickReqParams_pb2 import TickReqParams as TickReqParamsProto
 from ibapi.protobuf.AccountValue_pb2 import AccountValue as AccountValueProto
 from ibapi.protobuf.PortfolioValue_pb2 import PortfolioValue as PortfolioValueProto
-from ibapi.protobuf.AccountUpdateTime_pb2 import AccountUpdateTime as AccountUpdateTimeProto
+from ibapi.protobuf.AccountUpdateTime_pb2 import (
+    AccountUpdateTime as AccountUpdateTimeProto,
+)
 from ibapi.protobuf.AccountDataEnd_pb2 import AccountDataEnd as AccountDataEndProto
 from ibapi.protobuf.ManagedAccounts_pb2 import ManagedAccounts as ManagedAccountsProto
 from ibapi.protobuf.Position_pb2 import Position as PositionProto
 from ibapi.protobuf.PositionEnd_pb2 import PositionEnd as PositionEndProto
 from ibapi.protobuf.AccountSummary_pb2 import AccountSummary as AccountSummaryProto
-from ibapi.protobuf.AccountSummaryEnd_pb2 import AccountSummaryEnd as AccountSummaryEndProto
+from ibapi.protobuf.AccountSummaryEnd_pb2 import (
+    AccountSummaryEnd as AccountSummaryEndProto,
+)
 from ibapi.protobuf.PositionMulti_pb2 import PositionMulti as PositionMultiProto
-from ibapi.protobuf.PositionMultiEnd_pb2 import PositionMultiEnd as PositionMultiEndProto
-from ibapi.protobuf.AccountUpdateMulti_pb2 import AccountUpdateMulti as AccountUpdateMultiProto
-from ibapi.protobuf.AccountUpdateMultiEnd_pb2 import AccountUpdateMultiEnd as AccountUpdateMultiEndProto
+from ibapi.protobuf.PositionMultiEnd_pb2 import (
+    PositionMultiEnd as PositionMultiEndProto,
+)
+from ibapi.protobuf.AccountUpdateMulti_pb2 import (
+    AccountUpdateMulti as AccountUpdateMultiProto,
+)
+from ibapi.protobuf.AccountUpdateMultiEnd_pb2 import (
+    AccountUpdateMultiEnd as AccountUpdateMultiEndProto,
+)
 from ibapi.protobuf.HistoricalData_pb2 import HistoricalData as HistoricalDataProto
-from ibapi.protobuf.HistoricalDataUpdate_pb2 import HistoricalDataUpdate as HistoricalDataUpdateProto
-from ibapi.protobuf.HistoricalDataEnd_pb2 import HistoricalDataEnd as HistoricalDataEndProto
+from ibapi.protobuf.HistoricalDataUpdate_pb2 import (
+    HistoricalDataUpdate as HistoricalDataUpdateProto,
+)
+from ibapi.protobuf.HistoricalDataEnd_pb2 import (
+    HistoricalDataEnd as HistoricalDataEndProto,
+)
 from ibapi.protobuf.RealTimeBarTick_pb2 import RealTimeBarTick as RealTimeBarTickProto
 from ibapi.protobuf.HeadTimestamp_pb2 import HeadTimestamp as HeadTimestampProto
 from ibapi.protobuf.HistogramData_pb2 import HistogramData as HistogramDataProto
 from ibapi.protobuf.HistoricalTicks_pb2 import HistoricalTicks as HistoricalTicksProto
-from ibapi.protobuf.HistoricalTicksBidAsk_pb2 import HistoricalTicksBidAsk as HistoricalTicksBidAskProto
-from ibapi.protobuf.HistoricalTicksLast_pb2 import HistoricalTicksLast as HistoricalTicksLastProto
+from ibapi.protobuf.HistoricalTicksBidAsk_pb2 import (
+    HistoricalTicksBidAsk as HistoricalTicksBidAskProto,
+)
+from ibapi.protobuf.HistoricalTicksLast_pb2 import (
+    HistoricalTicksLast as HistoricalTicksLastProto,
+)
 from ibapi.protobuf.TickByTickData_pb2 import TickByTickData as TickByTickDataProto
 
 logger = logging.getLogger(__name__)
@@ -924,7 +951,9 @@ class EWrapper:
     def completedOrderProtoBuf(self, completedOrderProto: CompletedOrderProto):
         logAnswer(current_fn_name(), vars())
 
-    def completedOrdersEndProtoBuf(self, completedOrdersEndProto: CompletedOrdersEndProto):
+    def completedOrdersEndProtoBuf(
+        self, completedOrdersEndProto: CompletedOrdersEndProto
+    ):
         logAnswer(current_fn_name(), vars())
 
     def orderBoundProtoBuf(self, orderBoundProto: OrderBoundProto):
@@ -945,7 +974,9 @@ class EWrapper:
     def tickSizeProtoBuf(self, tickSizeProto: TickSizeProto):
         logAnswer(current_fn_name(), vars())
 
-    def tickOptionComputationProtoBuf(self, tickOptionComputationProto: TickOptionComputationProto):
+    def tickOptionComputationProtoBuf(
+        self, tickOptionComputationProto: TickOptionComputationProto
+    ):
         logAnswer(current_fn_name(), vars())
 
     def tickGenericProtoBuf(self, tickGenericProto: TickGenericProto):
@@ -1002,16 +1033,22 @@ class EWrapper:
     def positionMultiEndProtoBuf(self, positionMultiEndProto: PositionMultiEndProto):
         logAnswer(current_fn_name(), vars())
 
-    def accountUpdateMultiProtoBuf(self, accountUpdateMultiProto: AccountUpdateMultiProto):
+    def accountUpdateMultiProtoBuf(
+        self, accountUpdateMultiProto: AccountUpdateMultiProto
+    ):
         logAnswer(current_fn_name(), vars())
 
-    def accountUpdateMultiEndProtoBuf(self, accountUpdateMultiEndProto: AccountUpdateMultiEndProto):
+    def accountUpdateMultiEndProtoBuf(
+        self, accountUpdateMultiEndProto: AccountUpdateMultiEndProto
+    ):
         logAnswer(current_fn_name(), vars())
 
     def historicalDataProtoBuf(self, historicalDataProto: HistoricalDataProto):
         logAnswer(current_fn_name(), vars())
 
-    def historicalDataUpdateProtoBuf(self, historicalDataUpdateProto: HistoricalDataUpdateProto):
+    def historicalDataUpdateProtoBuf(
+        self, historicalDataUpdateProto: HistoricalDataUpdateProto
+    ):
         logAnswer(current_fn_name(), vars())
 
     def historicalDataEndProtoBuf(self, historicalDataEndProto: HistoricalDataEndProto):
@@ -1029,10 +1066,14 @@ class EWrapper:
     def historicalTicksProtoBuf(self, historicalTicksProto: HistoricalTicksProto):
         logAnswer(current_fn_name(), vars())
 
-    def historicalTicksBidAskProtoBuf(self, historicalTicksBidAskProto: HistoricalTicksBidAskProto):
+    def historicalTicksBidAskProtoBuf(
+        self, historicalTicksBidAskProto: HistoricalTicksBidAskProto
+    ):
         logAnswer(current_fn_name(), vars())
 
-    def historicalTicksLastProtoBuf(self, historicalTicksLastProto: HistoricalTicksLastProto):
+    def historicalTicksLastProtoBuf(
+        self, historicalTicksLastProto: HistoricalTicksLastProto
+    ):
         logAnswer(current_fn_name(), vars())
 
     def tickByTickDataProtoBuf(self, tickByTickDataProto: TickByTickDataProto):

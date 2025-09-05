@@ -3,13 +3,12 @@ Copyright (C) 2024 Interactive Brokers LLC. All rights reserved. This code is su
  and conditions of the IB API Non-Commercial License or the IB API Commercial License, as applicable.
 """
 
-from ibapi.contract import * # @UnusedWildImport
+from ibapi.contract import *  # @UnusedWildImport
 
 
 class ContractSamples:
-
-    """ Usually, the easiest way to define a Stock/CASH contract is through 
-    these four attributes.  """
+    """Usually, the easiest way to define a Stock/CASH contract is through
+    these four attributes."""
 
     @staticmethod
     def EurGbpFx():
@@ -22,7 +21,6 @@ class ContractSamples:
         #! [cashcontract]
         return contract
 
-
     @staticmethod
     def Index():
         #! [indcontract]
@@ -34,7 +32,6 @@ class ContractSamples:
         #! [indcontract]
         return contract
 
-
     @staticmethod
     def CFD():
         #! [cfdcontract]
@@ -45,7 +42,6 @@ class ContractSamples:
         contract.exchange = "SMART"
         #! [cfdcontract]
         return contract
-
 
     @staticmethod
     def EuropeanStock():
@@ -80,19 +76,17 @@ class ContractSamples:
         contract.multiplier = "100"
         return contract
 
-
     @staticmethod
     def BondWithCusip():
         #! [bondwithcusip]
         contract = Contract()
         # enter CUSIP as symbol
-        contract.symbol= "449276AA2"
+        contract.symbol = "449276AA2"
         contract.secType = "BOND"
         contract.exchange = "SMART"
         contract.currency = "USD"
         #! [bondwithcusip]
         return contract
-
 
     @staticmethod
     def Bond():
@@ -102,7 +96,6 @@ class ContractSamples:
         contract.exchange = "SMART"
         #! [bond]
         return contract
-
 
     @staticmethod
     def MutualFund():
@@ -115,7 +108,6 @@ class ContractSamples:
         #! [fundcontract]
         return contract
 
-
     @staticmethod
     def Commodity():
         #! [commoditycontract]
@@ -126,7 +118,6 @@ class ContractSamples:
         contract.currency = "USD"
         #! [commoditycontract]
         return contract
-    
 
     @staticmethod
     def USStock():
@@ -138,7 +129,6 @@ class ContractSamples:
         contract.exchange = "ARCA"
         #! [stkcontract]
         return contract
-
 
     @staticmethod
     def USStockWithPrimaryExch():
@@ -152,7 +142,6 @@ class ContractSamples:
         #! [stkcontractwithprimary]
         return contract
 
-            
     @staticmethod
     def USStockAtSmart():
         contract = Contract()
@@ -186,7 +175,6 @@ class ContractSamples:
         #! [optcontract_us]
         return contract
 
-
     @staticmethod
     def OptionAtBOX():
         #! [optcontract]
@@ -201,7 +189,6 @@ class ContractSamples:
         contract.multiplier = "100"
         #! [optcontract]
         return contract
-
 
     """ Option contracts require far more information since there are many 
     contracts having the exact same attributes such as symbol, currency, 
@@ -224,7 +211,6 @@ class ContractSamples:
         #! [optcontract_tradingclass]
         return contract
 
-
     """ Using the contract's own symbol (localSymbol) can greatly simplify a
     contract description """
 
@@ -232,7 +218,7 @@ class ContractSamples:
     def OptionWithLocalSymbol():
         #! [optcontract_localsymbol]
         contract = Contract()
-        #Watch out for the spaces within the local symbol!
+        # Watch out for the spaces within the local symbol!
         contract.localSymbol = "P BMW  20221216 72 M"
         contract.secType = "OPT"
         contract.exchange = "EUREX"
@@ -269,7 +255,6 @@ class ContractSamples:
         #! [futcontract]
         return contract
 
-
     """Rather than giving expiration dates we can also provide the local symbol
     attributes such as symbol, currency, strike, etc. """
 
@@ -284,7 +269,6 @@ class ContractSamples:
         #! [futcontract_local_symbol]
         return contract
 
-
     @staticmethod
     def FutureWithMultiplier():
         #! [futcontract_multiplier]
@@ -297,7 +281,6 @@ class ContractSamples:
         contract.multiplier = "1"
         #! [futcontract_multiplier]
         return contract
-
 
     """ Note the space in the symbol! """
 
@@ -354,7 +337,6 @@ class ContractSamples:
         contract.secType = "STK"
         return contract
 
-
     """ Or their conId (EUR.uSD sample).
     Note: passing a contract containing the conId can cause problems if one of 
     the other provided attributes does not match 100% with what is in IB's 
@@ -370,7 +352,6 @@ class ContractSamples:
         contract.conId = 12087792
         contract.exchange = "IDEALPRO"
         return contract
-
 
     """ Ambiguous contracts are great to use with reqContractDetails. This way
     you can query the whole option chain for an underlying. Bear in mind that
@@ -388,7 +369,6 @@ class ContractSamples:
         #! [optionforquery]
         return contract
 
-
     @staticmethod
     def OptionComboContract():
         #! [bagoptcontract]
@@ -399,13 +379,13 @@ class ContractSamples:
         contract.exchange = "EUREX"
 
         leg1 = ComboLeg()
-        leg1.conId = 577164786 #DBK Jun21'24 2 CALL @EUREX
+        leg1.conId = 577164786  # DBK Jun21'24 2 CALL @EUREX
         leg1.ratio = 1
         leg1.action = "BUY"
         leg1.exchange = "EUREX"
 
         leg2 = ComboLeg()
-        leg2.conId = 577164767 #DBK Dec15'23 2 CALL @EUREX
+        leg2.conId = 577164767  # DBK Dec15'23 2 CALL @EUREX
         leg2.ratio = 1
         leg2.action = "SELL"
         leg2.exchange = "EUREX"
@@ -415,7 +395,6 @@ class ContractSamples:
         contract.comboLegs.append(leg2)
         #! [bagoptcontract]
         return contract
-
 
     """ STK Combo contract
     Leg 1: 43645865 - IBKR's STK
@@ -431,13 +410,13 @@ class ContractSamples:
         contract.exchange = "SMART"
 
         leg1 = ComboLeg()
-        leg1.conId = 43645865#IBKR STK
+        leg1.conId = 43645865  # IBKR STK
         leg1.ratio = 1
         leg1.action = "BUY"
         leg1.exchange = "SMART"
 
         leg2 = ComboLeg()
-        leg2.conId = 9408#MCD STK
+        leg2.conId = 9408  # MCD STK
         leg2.ratio = 1
         leg2.action = "SELL"
         leg2.exchange = "SMART"
@@ -447,7 +426,6 @@ class ContractSamples:
         contract.comboLegs.append(leg2)
         #! [bagstkcontract]
         return contract
-
 
     """ CBOE Volatility Index Future combo contract """
 
@@ -461,13 +439,13 @@ class ContractSamples:
         contract.exchange = "CFE"
 
         leg1 = ComboLeg()
-        leg1.conId = 326501438 # VIX FUT 201903
+        leg1.conId = 326501438  # VIX FUT 201903
         leg1.ratio = 1
         leg1.action = "BUY"
         leg1.exchange = "CFE"
 
         leg2 = ComboLeg()
-        leg2.conId = 323072528 # VIX FUT 2019049
+        leg2.conId = 323072528  # VIX FUT 2019049
         leg2.ratio = 1
         leg2.action = "SELL"
         leg2.exchange = "CFE"
@@ -482,19 +460,19 @@ class ContractSamples:
     def SmartFutureComboContract():
         #! [smartfuturespread]
         contract = Contract()
-        contract.symbol = "WTI" # WTI,COIL spread. Symbol can be defined as first leg symbol ("WTI") or currency ("USD")
+        contract.symbol = "WTI"  # WTI,COIL spread. Symbol can be defined as first leg symbol ("WTI") or currency ("USD")
         contract.secType = "BAG"
         contract.currency = "USD"
         contract.exchange = "SMART"
 
         leg1 = ComboLeg()
-        leg1.conId = 55928698 # WTI future June 2017
+        leg1.conId = 55928698  # WTI future June 2017
         leg1.ratio = 1
         leg1.action = "BUY"
         leg1.exchange = "IPE"
 
         leg2 = ComboLeg()
-        leg2.conId = 55850663 # COIL future June 2017
+        leg2.conId = 55850663  # COIL future June 2017
         leg2.ratio = 1
         leg2.action = "SELL"
         leg2.exchange = "IPE"
@@ -509,19 +487,21 @@ class ContractSamples:
     def InterCmdtyFuturesContract():
         #! [intcmdfutcontract]
         contract = Contract()
-        contract.symbol = "COL.WTI" #symbol is 'local symbol' of intercommodity spread. 
+        contract.symbol = (
+            "COL.WTI"  # symbol is 'local symbol' of intercommodity spread.
+        )
         contract.secType = "BAG"
         contract.currency = "USD"
         contract.exchange = "IPE"
 
         leg1 = ComboLeg()
-        leg1.conId = 183405603 #WTI�Dec'23�@IPE
+        leg1.conId = 183405603  # WTI�Dec'23�@IPE
         leg1.ratio = 1
         leg1.action = "BUY"
         leg1.exchange = "IPE"
 
         leg2 = ComboLeg()
-        leg2.conId = 254011009 #COIL�Dec'23�@IPE
+        leg2.conId = 254011009  # COIL�Dec'23�@IPE
         leg2.ratio = 1
         leg2.action = "SELL"
         leg2.exchange = "IPE"
@@ -532,27 +512,24 @@ class ContractSamples:
         #! [intcmdfutcontract]
         return contract
 
-
     @staticmethod
     def NewsFeedForQuery():
         #! [newsfeedforquery]
         contract = Contract()
         contract.secType = "NEWS"
-        contract.exchange = "BRFG" #Briefing Trader
+        contract.exchange = "BRFG"  # Briefing Trader
         #! [newsfeedforquery]
         return contract
-
 
     @staticmethod
     def BTbroadtapeNewsFeed():
         #! [newscontractbt]
         contract = Contract()
-        contract.symbol  = "BRF:BRF_ALL"
+        contract.symbol = "BRF:BRF_ALL"
         contract.secType = "NEWS"
         contract.exchange = "BRF"
         #! [newscontractbt]
         return contract
-
 
     @staticmethod
     def BZbroadtapeNewsFeed():
@@ -564,17 +541,15 @@ class ContractSamples:
         #! [newscontractbz]
         return contract
 
-
     @staticmethod
     def FLYbroadtapeNewsFeed():
         #! [newscontractfly]
         contract = Contract()
-        contract.symbol  = "FLY:FLY_ALL"
+        contract.symbol = "FLY:FLY_ALL"
         contract.secType = "NEWS"
         contract.exchange = "FLY"
         #! [newscontractfly]
         return contract
-
 
     @staticmethod
     def ContFut():
@@ -705,7 +680,7 @@ class ContractSamples:
         contract.exchange = "SMART"
         # ! [ByFIGI]
         return contract
-        
+
     @staticmethod
     def ByIssuerId():
         # ! [ByIssuerId]
@@ -751,11 +726,12 @@ class ContractSamples:
         # ! [optforecastxcontract]
         return contract
 
+
 def Test():
     from ibapi.utils import ExerciseStaticMethods
+
     ExerciseStaticMethods(ContractSamples)
 
 
 if "__main__" == __name__:
     Test()
-

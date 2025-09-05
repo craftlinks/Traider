@@ -7,17 +7,21 @@ from typing import List
 from traider.platforms.yahoo.main import YahooFinance, EarningsEvent
 from traider.db.database import get_db_connection, create_tables
 
-def collect_yahoo_earnings_and_save_to_db(start_date: date, end_date: date, db_conn: sqlite3.Connection):
+
+def collect_yahoo_earnings_and_save_to_db(
+    start_date: date, end_date: date, db_conn: sqlite3.Connection
+):
     yahoo_finance = YahooFinance()
-    earnings: List[EarningsEvent] = yahoo_finance.get_earnings_for_date_range(start_date, end_date, as_dataframe=False) # type: ignore[assignment]
+    earnings: List[EarningsEvent] = yahoo_finance.get_earnings_for_date_range(
+        start_date, end_date, as_dataframe=False
+    )  # type: ignore[assignment]
 
     # We only want earnings events for which we have an estimated earnings per share and an actual earnings per share
     earnings = [
         earning
         for earning in earnings
         if (
-            earning.eps_estimate is not None
-            and not math.isnan(earning.eps_estimate)
+            earning.eps_estimate is not None and not math.isnan(earning.eps_estimate)
             # and earning.eps_actual is not None
             # and not math.isnan(earning.eps_actual)
         )
@@ -81,9 +85,7 @@ def _parse_date(date_str: str | None) -> date:
     try:
         return datetime.strptime(date_str, "%Y-%m-%d").date()
     except ValueError as exc:  # pragma: no cover – simple argument validation
-        msg = (
-            "Invalid date format for '--start-date/--end-date'. Expected YYYY-MM-DD."
-        )
+        msg = "Invalid date format for '--start-date/--end-date'. Expected YYYY-MM-DD."
         raise SystemExit(msg) from exc
 
 
@@ -93,7 +95,6 @@ def _parse_date(date_str: str | None) -> date:
 
 
 if __name__ == "__main__":
-
     args = _parse_cli_args()
 
     start = _parse_date(args.start_date)

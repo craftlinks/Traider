@@ -3,17 +3,15 @@ Copyright (C) 2024 Interactive Brokers LLC. All rights reserved. This code is su
  and conditions of the IB API Non-Commercial License or the IB API Commercial License, as applicable.
 """
 
-
-from ibapi.object_implem import Object 
+from ibapi.object_implem import Object
 from ibapi.scanner import ScannerSubscription
 
 
 class ScannerSubscriptionSamples(Object):
-
     @staticmethod
     def HotUSStkByVolume():
         #! [hotusvolume]
-        #Hot US stocks by volume
+        # Hot US stocks by volume
         scanSub = ScannerSubscription()
         scanSub.instrument = "STK"
         scanSub.locationCode = "STK.US.MAJOR"
@@ -65,13 +63,13 @@ class ScannerSubscriptionSamples(Object):
         #! [combolatesttrade]
         return scanSub
 
+
 def Test():
     print(ScannerSubscriptionSamples.HotUSStkByVolume())
     print(ScannerSubscriptionSamples.TopPercentGainersIbis())
     print(ScannerSubscriptionSamples.MostActiveFutEurex())
     print(ScannerSubscriptionSamples.HighOptVolumePCRatioUSIndexes())
-    
- 
+
+
 if "__main__" == __name__:
     Test()
- 

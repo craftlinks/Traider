@@ -29,6 +29,7 @@ Y_STATE = _YahooState()
 # ---------------------------------------------------------------------------
 # Helper functions
 
+
 def _to_float(val: Any) -> float:
     """Best-effort conversion to *float* returning ``nan`` on failure."""
     try:
@@ -37,6 +38,7 @@ def _to_float(val: Any) -> float:
         return float(val)  # type: ignore[arg-type]
     except (TypeError, ValueError):
         return float("nan")
+
 
 async def _initialize_session() -> None:
     """Internal logic for creating the session and fetching the crumb."""
@@ -61,21 +63,31 @@ async def _initialize_session() -> None:
         Y_STATE.session = None
         raise RuntimeError("Unable to obtain Yahoo crumb token.")
 
+
 async def _get_session() -> httpx.AsyncClient:
     if Y_STATE.session is None:
         logger.debug("Lazy-initialising Yahoo Finance session …")
         await _initialize_session()
     return Y_STATE.session  # type: ignore[return-value]
 
+
 # ---------------------------------------------------------------------------
 # Private helpers – cookie / crumb handling
 # ---------------------------------------------------------------------------
 
-async def _fetch_cookie_and_crumb(session: httpx.AsyncClient, *, timeout: int = 30) -> tuple[Any | None, str | None]:
+
+async def _fetch_cookie_and_crumb(
+    session: httpx.AsyncClient, *, timeout: int = 30
+) -> tuple[Any | None, str | None]:
     """Retrieve Yahoo's **A3** cookie + crumb anti-CSRF token."""
     headers = {"User-Agent": _USER_AGENT}
     try:
-        resp = await session.get("https://fc.yahoo.com", headers=headers, timeout=timeout, follow_redirects=True)
+        resp = await session.get(
+            "https://fc.yahoo.com",
+            headers=headers,
+            timeout=timeout,
+            follow_redirects=True,
+        )
         if not resp.cookies:
             return None, None
 
@@ -106,7 +118,9 @@ async def _refresh_cookie_and_crumb() -> None:
         Y_STATE.cookie, Y_STATE.crumb = cookie, crumb
         logger.debug("Successfully refreshed Yahoo crumb: %s", crumb)
     else:
-        logger.warning("Failed to refresh crumb with existing session, re-initializing.")
+        logger.warning(
+            "Failed to refresh crumb with existing session, re-initializing."
+        )
         try:
             await Y_STATE.session.aclose()
         except Exception:
@@ -114,9 +128,11 @@ async def _refresh_cookie_and_crumb() -> None:
         Y_STATE.session = None
         await _initialize_session()
 
+
 # ---------------------------------------------------------------------------
 # Internal helpers (dataframe → dataclass etc.)
 # ---------------------------------------------------------------------------
+
 
 def _df_to_events(df: pd.DataFrame) -> list[EarningsEvent]:
     """Convert the *pandas* DataFrame from :pyfunc:`extract_earnings_data_json`."""
@@ -132,7 +148,11 @@ def _df_to_events(df: pd.DataFrame) -> list[EarningsEvent]:
             eps_est = _to_float(series.get("EPS Estimate"))
             eps_act = _to_float(series.get("Reported EPS"))
             surprise_pct = _to_float(series.get("Surprise (%)"))
-            eps_surp = eps_act - eps_est if not math.isnan(eps_est) and not math.isnan(eps_act) else float("nan")
+            eps_surp = (
+                eps_act - eps_est
+                if not math.isnan(eps_est) and not math.isnan(eps_act)
+                else float("nan")
+            )
 
             ect_raw = series.get("Earnings Call Time")
             if isinstance(ect_raw, pd.Timestamp):
@@ -156,14 +176,20 @@ def _df_to_events(df: pd.DataFrame) -> list[EarningsEvent]:
                 )
             )
         except Exception as exc:  # pragma: no cover – defensive
-            logger.debug("Failed to convert earnings row: %s; data=%s", exc, series.to_dict())
+            logger.debug(
+                "Failed to convert earnings row: %s; data=%s", exc, series.to_dict()
+            )
     return events
+
 
 # ---------------------------------------------------------------------------
 # Helper extraction functions (migrated from OLD_helpers.py)
 # ---------------------------------------------------------------------------
 
-def _extract_profile_data_html(html: str) -> tuple[Optional[str], Optional[str], Optional[str]]:
+
+def _extract_profile_data_html(
+    html: str,
+) -> tuple[Optional[str], Optional[str], Optional[str]]:
     """Parse Yahoo profile HTML and return (website_url, sector, industry)."""
     soup = BeautifulSoup(html, "html.parser")
 
@@ -189,7 +215,9 @@ def _extract_profile_data_html(html: str) -> tuple[Optional[str], Optional[str],
 
     # --- Industry -----------------------------------------------------------
     industry: Optional[str] = None
-    dt_industry = soup.find("dt", string=lambda s: isinstance(s, str) and "Industry" in s)
+    dt_industry = soup.find(
+        "dt", string=lambda s: isinstance(s, str) and "Industry" in s
+    )
     if dt_industry is not None:
         industry_anchor = dt_industry.find_next("a")
         if industry_anchor is not None:
@@ -198,9 +226,13 @@ def _extract_profile_data_html(html: str) -> tuple[Optional[str], Optional[str],
     return website_url, sector, industry
 
 
-def _extract_profile_data_json(json: dict[str, Any]) -> tuple[Optional[str], Optional[str], Optional[str]]:
+def _extract_profile_data_json(
+    json: dict[str, Any],
+) -> tuple[Optional[str], Optional[str], Optional[str]]:
     """Parse Yahoo profile JSON and return (website_url, sector, industry)."""
-    profile = json.get("quoteSummary", {}).get("result", [{}])[0].get("assetProfile", {})
+    profile = (
+        json.get("quoteSummary", {}).get("result", [{}])[0].get("assetProfile", {})
+    )
     website = profile.get("website")
     sector = profile.get("sector")
     industry = profile.get("industry")
@@ -209,7 +241,9 @@ def _extract_profile_data_json(json: dict[str, Any]) -> tuple[Optional[str], Opt
 
 def _extract_earnings_data_json(api_payload: dict[str, Any]) -> pd.DataFrame:
     """Parse the Yahoo earnings JSON and return a DataFrame."""
-    documents: list[dict] = api_payload.get("finance", {}).get("result", [{}])[0].get("documents", [])
+    documents: list[dict] = (
+        api_payload.get("finance", {}).get("result", [{}])[0].get("documents", [])
+    )
     if not documents:
         logger.info("No earnings rows returned by Yahoo.")
         return pd.DataFrame()
@@ -222,7 +256,7 @@ def _extract_earnings_data_json(api_payload: dict[str, Any]) -> pd.DataFrame:
         return pd.DataFrame()
 
     columns = [col["id"] for col in columns_meta]
-    df = pd.DataFrame(rows, columns=columns) # type: ignore[arg-type]
+    df = pd.DataFrame(rows, columns=columns)  # type: ignore[arg-type]
 
     # Friendly column names
     df.rename(
@@ -258,9 +292,11 @@ def _extract_earnings_data_json(api_payload: dict[str, Any]) -> pd.DataFrame:
     logger.debug("Successfully fetched %d earnings rows.", len(df))
     return df
 
+
 # ---------------------------------------------------------------------------
 # Validation helpers (adapted from original class methods)
 # ---------------------------------------------------------------------------
+
 
 def _validate_ticker(ticker: str) -> str | None:
     if not ticker or len(ticker) > 10:

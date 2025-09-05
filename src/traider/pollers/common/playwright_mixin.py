@@ -30,6 +30,7 @@ from crawlee.crawlers import PlaywrightCrawler, PlaywrightCrawlingContext
 from crawlee.errors import SessionError
 
 import logging
+
 logger = logging.getLogger(__name__)
 
 __all__ = ["PlaywrightMixin"]
@@ -62,7 +63,11 @@ class PlaywrightMixin:
             asyncio.set_event_loop(loop)
             loop.run_forever()
 
-        self._thread = threading.Thread(target=_thread_entry, daemon=True, name=f"{self.__class__.__name__}-PlaywrightLoop")
+        self._thread = threading.Thread(
+            target=_thread_entry,
+            daemon=True,
+            name=f"{self.__class__.__name__}-PlaywrightLoop",
+        )
         self._thread.start()
 
         # ------------------------------------------------------------------
@@ -86,7 +91,9 @@ class PlaywrightMixin:
                 wait_for_selector = context.request.user_data.get("wait_for_selector")
                 if isinstance(wait_for_selector, str):
                     try:
-                        await context.page.wait_for_selector(wait_for_selector, timeout=15000)
+                        await context.page.wait_for_selector(
+                            wait_for_selector, timeout=15000
+                        )
                     except Exception:
                         # Log the timeout but proceed to grab content anyway, which might
                         # be a "Forbidden" page that is useful for debugging.
@@ -101,7 +108,9 @@ class PlaywrightMixin:
                 if fut and not fut.done():
                     fut.set_result(html)
 
-            async def _error_handler(context: PlaywrightCrawlingContext, exc: Exception) -> None:
+            async def _error_handler(
+                context: PlaywrightCrawlingContext, exc: Exception
+            ) -> None:
                 """Handle crawler errors and propagate them to the waiting Future."""
                 fut = self._result_futures.pop(context.request.unique_key, None)
                 if fut and not fut.done():
@@ -145,5 +154,7 @@ class PlaywrightMixin:
             logger.warning("Failed to fetch URL '%s' with Playwright: %s", url, exc)
             return ""  # Return empty HTML on failure to prevent poller crash
         except Exception as exc:
-            logger.exception("An unexpected error occurred in Playwright fetch for '%s'", url)
+            logger.exception(
+                "An unexpected error occurred in Playwright fetch for '%s'", url
+            )
             return ""

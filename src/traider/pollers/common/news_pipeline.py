@@ -18,6 +18,7 @@ class NewsEvent:
         article_text: Optional extracted article/body text.
         received_at: Wall-clock timestamp when enqueued.
     """
+
     source: str
     item: BaseItem
     received_at: float = time.time()
@@ -30,7 +31,9 @@ class QueueSink:
     backpressure instead of dropping events.
     """
 
-    def __init__(self, q: queue.Queue[NewsEvent], block_timeout_seconds: float = 0.25) -> None:
+    def __init__(
+        self, q: queue.Queue[NewsEvent], block_timeout_seconds: float = 0.25
+    ) -> None:
         self._q = q
         self._timeout = max(0.0, float(block_timeout_seconds))
 
@@ -40,5 +43,3 @@ class QueueSink:
         except queue.Full:
             # Timed out while waiting for space; drop silently.
             pass
-
-

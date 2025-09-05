@@ -21,13 +21,13 @@ from traider.platforms.parsers.webpage_helper.common import (
 
 # Set maximum indentation level to prevent excessive indentation
 _MAX_INDENT = 5
-_MAIN_CONTENT = 'main_content'
+_MAIN_CONTENT = "main_content"
 _CONTENT_TYPES = {
-    'main_content': get_main_content,
-    'header_content': get_header_content,
-    'footer_content': get_footer_content,
-    'navigation_content': get_navigation_content,
-    'sidebar_content': get_sidebar_content,
+    "main_content": get_main_content,
+    "header_content": get_header_content,
+    "footer_content": get_footer_content,
+    "navigation_content": get_navigation_content,
+    "sidebar_content": get_sidebar_content,
 }
 
 
@@ -57,7 +57,7 @@ def simple_text_extractor_base(
     Returns:
         StructuredContent instance containing different types of extracted text
     """
-    soup = BeautifulSoup(html, 'lxml')
+    soup = BeautifulSoup(html, "lxml")
     remove_unwanted_tags(soup)
     remove_comments(soup)
 
@@ -95,10 +95,8 @@ def simple_text_extractor_base(
 
     # Filter content
     filtered_content = {
-        key: '\n'.join(
-            filter_and_deduplicate_lines(
-                lines, min_character_length=min_characters
-            )
+        key: "\n".join(
+            filter_and_deduplicate_lines(lines, min_character_length=min_characters)
         )
         or None
         for key, lines in content_structures.items()
@@ -139,9 +137,7 @@ def process_element(
         if _handle_text_element(element, structured_lines, indent_level):
             return
     elif isinstance(element, Tag):
-        if _handle_link_element(
-            element, structured_lines, base_url, indent_level
-        ):
+        if _handle_link_element(element, structured_lines, base_url, indent_level):
             return
 
         if _handle_heading_element(element, structured_lines):
@@ -192,17 +188,21 @@ def _handle_link_element(
     base_url: Optional[str],
     indent_level: int,
 ) -> bool:
-    if not (element.name == 'a' and element.get('href')):
+    if not (element.name == "a" and element.get("href")):
         return False
 
     link_text = remove_white_spaces(element.get_text())
-    href_val = element.get('href')
-    href = ''.join(href_val) if isinstance(href_val, list) else href_val
+    href_val = element.get("href")
+    href = "".join(href_val) if isinstance(href_val, list) else href_val
 
     if not link_text or len(link_text) < 3 or is_irrelevant_link(href):
         return True
 
-    if base_url and href and not href.startswith(('http://', 'https://', 'mailto:', 'tel:')):
+    if (
+        base_url
+        and href
+        and not href.startswith(("http://", "https://", "mailto:", "tel:"))
+    ):
         href = urllib.parse.urljoin(base_url, href)
 
     _append_structured_line(structured_lines, link_text, indent_level, href)
@@ -210,7 +210,7 @@ def _handle_link_element(
 
 
 def _handle_heading_element(element: Tag, structured_lines: List[str]) -> bool:
-    if element.name not in ['h1', 'h2', 'h3', 'h4', 'h5', 'h6']:
+    if element.name not in ["h1", "h2", "h3", "h4", "h5", "h6"]:
         return False
 
     heading_text = remove_white_spaces(element.get_text())
@@ -226,16 +226,16 @@ def _is_navigation_element(element: Tag) -> bool:
     Determines if an element is a navigation element (header, footer, menu).
     This function is now used to identify side content elements.
     """
-    if element.name in ['nav', 'footer', 'header']:
+    if element.name in ["nav", "footer", "header"]:
         return True
 
-    for attr in ['id', 'class']:
+    for attr in ["id", "class"]:
         value = element.get(attr)
         if value:
-            value = ' '.join(value) if isinstance(value, list) else value
+            value = " ".join(value) if isinstance(value, list) else value
             if any(
                 term in value.lower()
-                for term in ['nav', 'footer', 'header', 'menu', 'sidebar']
+                for term in ["nav", "footer", "header", "menu", "sidebar"]
             ):
                 return True
     return False
@@ -246,17 +246,18 @@ def _new_indent(element: Tag, indent_level: int) -> int:
         indent_level + 1
         if element.name
         in [
-            'div',
-            'p',
-            'section',
-            'article',
-            'li',
-            'blockquote',
-            'table',
-            'tr',
-            'td',
+            "div",
+            "p",
+            "section",
+            "article",
+            "li",
+            "blockquote",
+            "table",
+            "tr",
+            "td",
         ]
         else indent_level
     )
+
 
 simple_text_extractor = partial(simple_text_extractor_base, min_characters=1)

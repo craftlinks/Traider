@@ -2,6 +2,7 @@ from abc import ABC, abstractmethod
 from typing import Optional, Callable
 from traider.models import Trade, Quote
 
+
 class MarketDataInterface(ABC):
     """
     An abstract interface for a market data provider.

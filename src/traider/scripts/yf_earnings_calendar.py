@@ -8,12 +8,12 @@ from traider.yfinance._models import EarningsEvent
 
 
 async def main() -> None:
-    
     parser = argparse.ArgumentParser()
-    parser.add_argument("--start-date", type=lambda s: date.fromisoformat(s), default=date(2025, 8, 28))
+    parser.add_argument(
+        "--start-date", type=lambda s: date.fromisoformat(s), default=date(2025, 8, 28)
+    )
     args = parser.parse_args()
-    
-    
+
     earnings: List[EarningsEvent] = await yf.get_earnings(args.start_date)
     pprint.pprint(earnings)
 

@@ -49,6 +49,7 @@ stop_event = asyncio.Event()
 # Earnings worker (consumer)
 # ---------------------------------------------------------------------------
 
+
 async def earnings_worker() -> None:
     """Background consumer that logs each :class:`EarningsEvent`."""
 
@@ -75,6 +76,7 @@ async def earnings_worker() -> None:
 # Main
 # ---------------------------------------------------------------------------
 
+
 async def main() -> None:
     args = parse_args()
 
@@ -94,8 +96,6 @@ async def main() -> None:
     poller = YahooEarningsPoller(date=poll_date, interval=interval)
     poller.set_sink(sink)
 
-
-
     # Start the asynchronous polling loop as a background task inside the
     # currently running event-loop instead of spawning an extra thread.
     task = asyncio.create_task(poller.async_polling_loop())  # type: ignore[attr-defined]
@@ -107,6 +107,7 @@ async def main() -> None:
     # infinite loop, so this effectively blocks until cancellation.
     await task
     await earnings_worker_task
+
 
 if __name__ == "__main__":
     asyncio.run(main())

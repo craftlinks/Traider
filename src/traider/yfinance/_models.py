@@ -32,12 +32,16 @@ class Profile:
             industry=row["industry"] if "industry" in row.keys() else None,
         )
 
-    async def to_db(self, *, ticker: str, conn: sqlite3.Connection | None = None) -> None:  # noqa: D401 (imperative mood)
+    async def to_db(
+        self, *, ticker: str, conn: sqlite3.Connection | None = None
+    ) -> None:  # noqa: D401 (imperative mood)
         """Persist the profile information for *ticker* to the database."""
 
         from traider.db import crud  # Local import to avoid circular dependency
 
-        await asyncio.to_thread(crud.save_profile, ticker=ticker, profile=self, conn=conn)
+        await asyncio.to_thread(
+            crud.save_profile, ticker=ticker, profile=self, conn=conn
+        )
 
 
 @dataclass(slots=True)
@@ -65,7 +69,9 @@ class EarningsEvent:
             earnings_call_time=row["report_datetime"],
             eps_estimate=row["eps_estimate"],
             eps_actual=row["reported_eps"],
-            eps_surprise=(row["reported_eps"] - row["eps_estimate"]) if row["eps_estimate"] is not None and row["reported_eps"] is not None else float("nan"),
+            eps_surprise=(row["reported_eps"] - row["eps_estimate"])
+            if row["eps_estimate"] is not None and row["reported_eps"] is not None
+            else float("nan"),
             eps_surprise_percent=row["surprise_percentage"],
             market_cap=row["market_cap"],
         )

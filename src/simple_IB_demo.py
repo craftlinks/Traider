@@ -60,14 +60,22 @@ logger = logging.getLogger(__name__)
 # Utility helpers
 # ---------------------------------------------------------------------------
 
-def wait_for_order_fill(platform: InteractiveBrokersPlatform, order_id: int, timeout: float = 30.0) -> bool:
+
+def wait_for_order_fill(
+    platform: InteractiveBrokersPlatform, order_id: int, timeout: float = 30.0
+) -> bool:
     """Wait for a specific order to fill using platform-native events."""
     did_fill = platform.wait_for_fill(order_id, timeout_seconds=timeout)
     status = platform.get_order_status(order_id)
     if did_fill:
         logger.info("Order %s filled.", order_id)
     else:
-        logger.warning("Order %s not filled within %.0fs (last status: %s)", order_id, timeout, status)
+        logger.warning(
+            "Order %s not filled within %.0fs (last status: %s)",
+            order_id,
+            timeout,
+            status,
+        )
     return did_fill
 
 
@@ -84,7 +92,7 @@ def run_pollers_in_background():
         BusinessWirePoller,
         # GlobeNewswirePoller,
         # NewsroomPoller,
-        #PRNewswirePoller,
+        # PRNewswirePoller,
         # SECPoller,
     ]
 
@@ -109,7 +117,11 @@ def run_pollers_in_background():
         parts: list[str] = []
         parts.append(f"source={_stringify_value(evt.source)}")
         try:
-            recv_iso = datetime.fromtimestamp(float(evt.received_at), tz=timezone.utc).isoformat().replace("+00:00", "Z")
+            recv_iso = (
+                datetime.fromtimestamp(float(evt.received_at), tz=timezone.utc)
+                .isoformat()
+                .replace("+00:00", "Z")
+            )
         except Exception:
             recv_iso = _stringify_value(evt.received_at)
         parts.append(f"received_at={recv_iso}")
@@ -118,18 +130,30 @@ def run_pollers_in_background():
         item = evt.item
         ordered_fields: list[str] = [
             # BaseItem
-            "id", "title", "url", "timestamp", "summary",
+            "id",
+            "title",
+            "url",
+            "timestamp",
+            "summary",
             # PRNewswire extension
             "time_et",
             # SEC extension
-            "items", "items_tier_map", "highest_item_tier", "primary_exhibit_type",
-            "exhibits_found", "has_material_contract_exhibit", "fallback_used", "acceptance_datetime_utc",
+            "items",
+            "items_tier_map",
+            "highest_item_tier",
+            "primary_exhibit_type",
+            "exhibits_found",
+            "has_material_contract_exhibit",
+            "fallback_used",
+            "acceptance_datetime_utc",
         ]
 
         seen: set[str] = set()
         for field_name in ordered_fields:
             seen.add(field_name)
-            parts.append(f"{field_name}={_stringify_value(getattr(item, field_name, None))}")
+            parts.append(
+                f"{field_name}={_stringify_value(getattr(item, field_name, None))}"
+            )
 
         # Include any additional attributes present on the item that we didn't list explicitly
         try:
@@ -178,6 +202,7 @@ def run_pollers_in_background():
 # ---------------------------------------------------------------------------
 # Main demo workflow
 # ---------------------------------------------------------------------------
+
 
 def main() -> None:
     """Entry-point for the demo."""
@@ -231,7 +256,9 @@ def main() -> None:
             raise RuntimeError(f"Could not retrieve quote for {symbol} – aborting.")
 
         buy_limit = quote_before.ask_price  # Pay the current ask
-        logger.info("Placing BUY LIMIT order for %d %s @ %.2f", quantity, symbol, buy_limit)
+        logger.info(
+            "Placing BUY LIMIT order for %d %s @ %.2f", quantity, symbol, buy_limit
+        )
 
         contract = Contract(symbol=symbol)
         buy_order = Order(
@@ -280,7 +307,9 @@ def main() -> None:
         # ------------------------------------------------------------------
         quote_after = market_data.get_latest_quote(symbol)
         sell_limit = quote_after.bid_price if quote_after else buy_limit
-        logger.info("Placing SELL LIMIT order for %d %s @ %.2f", quantity, symbol, sell_limit)
+        logger.info(
+            "Placing SELL LIMIT order for %d %s @ %.2f", quantity, symbol, sell_limit
+        )
 
         sell_order = Order(
             contract=contract,
@@ -313,8 +342,10 @@ def main() -> None:
                 time.sleep(1.0)
                 still_open = ib.get_open_orders()
                 if still_open:
-                    logger.warning("Some orders still reported open after cancel: %s",
-                                   [o.order_id for o in still_open if o.order_id is not None])
+                    logger.warning(
+                        "Some orders still reported open after cancel: %s",
+                        [o.order_id for o in still_open if o.order_id is not None],
+                    )
         except Exception as exc:
             logger.exception("Error during open order cancellation: %s", exc)
 
@@ -329,5 +360,6 @@ def main() -> None:
             pass
         logger.info("Done.")
 
+
 if __name__ == "__main__":
-        main()
+    main()

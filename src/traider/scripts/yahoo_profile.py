@@ -32,12 +32,12 @@ from typing import Final, Optional
 
 from traider.db.database import get_db_connection, create_tables
 from traider.db.data_manager import list_companies, add_url
+
 #    Courtesy delay between requests (seconds).  Be nice to Yahoo.
 _REQUEST_DELAY_S: Final[float] = 1.0
 
 # Set up module-level logger
 logger = logging.getLogger(__name__)
-
 
 
 # ---------------------------------------------------------------------------
@@ -49,7 +49,6 @@ def update_company_profile(
     ticker: str,
     yf: Optional[YahooFinance] = None,
 ) -> bool:  # noqa: D401 – imperative mood preferred
-
     if yf is None:
         yf = YahooFinance()
 
@@ -125,7 +124,9 @@ def update_all_company_profiles(
             return
         companies = companies[start_index:]
         logger.info(
-            "Resuming import at ticker %s (index %d).", start_from_upper, start_index + 1
+            "Resuming import at ticker %s (index %d).",
+            start_from_upper,
+            start_index + 1,
         )
 
     total = len(companies)
@@ -155,7 +156,11 @@ def update_all_company_profiles(
                 updated,
             )
 
-    logger.info("Completed profile refresh. Successfully updated %d of %d tickers.", updated, total)
+    logger.info(
+        "Completed profile refresh. Successfully updated %d of %d tickers.",
+        updated,
+        total,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -176,7 +181,9 @@ if __name__ == "__main__":  # pragma: no cover – manual usage
 
     _configure_logging()
 
-    parser = argparse.ArgumentParser(description="Fetch Yahoo Finance profile data and store it in the DB.")
+    parser = argparse.ArgumentParser(
+        description="Fetch Yahoo Finance profile data and store it in the DB."
+    )
     parser.add_argument(
         "tickers",
         metavar="T",
@@ -208,5 +215,6 @@ if __name__ == "__main__":  # pragma: no cover – manual usage
             if idx < len(args.tickers):
                 time.sleep(delay_between)
     else:
-        update_all_company_profiles(delay_between=delay_between, start_from=args.resume_from, yf=yf)
-
+        update_all_company_profiles(
+            delay_between=delay_between, start_from=args.resume_from, yf=yf
+        )

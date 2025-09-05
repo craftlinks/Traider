@@ -10,16 +10,18 @@ from traider.platforms.yahoo.main import Profile, YahooFinance
 logger = logging.getLogger(__name__)
 logging.basicConfig(
     level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.StreamHandler(),
-        logging.FileHandler('earnings_collection.log')
-    ]
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    handlers=[logging.StreamHandler(), logging.FileHandler("earnings_collection.log")],
 )
 
-def get_earnings_for_date_range(start_date: date, end_date: date, yf: YahooFinance) -> pd.DataFrame:
+
+def get_earnings_for_date_range(
+    start_date: date, end_date: date, yf: YahooFinance
+) -> pd.DataFrame:
     """Get a list of dates between start_date and end_date."""
-    date_range =  [start_date + timedelta(days=i) for i in range((end_date - start_date).days + 1)]
+    date_range = [
+        start_date + timedelta(days=i) for i in range((end_date - start_date).days + 1)
+    ]
 
     all_earnings_df = pd.DataFrame()
     successful_fetches = 0
@@ -30,7 +32,9 @@ def get_earnings_for_date_range(start_date: date, end_date: date, yf: YahooFinan
             logger.info(f"Fetching earnings data for {day}")
             df_day = yf.get_earnings(day)
             if not df_day.empty:
-                all_earnings_df = pd.concat([all_earnings_df, df_day], ignore_index=True)
+                all_earnings_df = pd.concat(
+                    [all_earnings_df, df_day], ignore_index=True
+                )
                 successful_fetches += 1
                 logger.info(f"Successfully fetched {len(df_day)} rows for {day}")
             else:
@@ -40,26 +44,34 @@ def get_earnings_for_date_range(start_date: date, end_date: date, yf: YahooFinan
             logger.error(f"Failed to fetch data for {day}: {e}")
             failed_fetches += 1
             continue
-    
+
     if all_earnings_df.empty:
         logger.info("No earnings data fetched for the date range")
     else:
         logger.info(f"--- Combined Data ({len(all_earnings_df)} total rows) ---")
-        logger.info(f"Successfully fetched data for {successful_fetches} days, failed for {failed_fetches} days")
+        logger.info(
+            f"Successfully fetched data for {successful_fetches} days, failed for {failed_fetches} days"
+        )
         logger.info(all_earnings_df.head(10))
 
     return all_earnings_df
 
-def get_earnings_tickers_for_date_range(db_conn: sqlite3.Connection, start_date: date, end_date: date) -> list[str]:
+
+def get_earnings_tickers_for_date_range(
+    db_conn: sqlite3.Connection, start_date: date, end_date: date
+) -> list[str]:
     """Get a list of tickers for companies with earnings data for the given date range."""
     cursor = db_conn.cursor()
     cursor.execute(
-    "SELECT DISTINCT company_ticker FROM earnings_reports WHERE report_datetime >= ? AND report_datetime < ?",
-    (start_date, end_date + timedelta(days=1)),
-)
+        "SELECT DISTINCT company_ticker FROM earnings_reports WHERE report_datetime >= ? AND report_datetime < ?",
+        (start_date, end_date + timedelta(days=1)),
+    )
     return [row[0] for row in cursor.fetchall()]
 
-def save_earnings_data(df: pd.DataFrame, conn: sqlite3.Connection, max_retries: int = 3) -> None:
+
+def save_earnings_data(
+    df: pd.DataFrame, conn: sqlite3.Connection, max_retries: int = 3
+) -> None:
     """Save earnings data from a DataFrame into the database with robust error handling.
 
     This function performs two main operations:
@@ -118,7 +130,9 @@ def save_earnings_data(df: pd.DataFrame, conn: sqlite3.Connection, max_retries: 
                     earnings_call_time = _validate_datetime(row["Earnings Call Time"])
 
                     if not symbol or not company_name:
-                        logger.warning(f"Skipping row with invalid symbol '{row['Symbol']}' or company name '{row['Company']}'")
+                        logger.warning(
+                            f"Skipping row with invalid symbol '{row['Symbol']}' or company name '{row['Company']}'"
+                        )
                         failed_inserts += 1
                         continue
 
@@ -166,32 +180,48 @@ def save_earnings_data(df: pd.DataFrame, conn: sqlite3.Connection, max_retries: 
 
                 except Exception as e:
                     failed_inserts += 1
-                    logger.error(f"Failed to process row for symbol {row.get('Symbol', 'Unknown')}: {e}")
+                    logger.error(
+                        f"Failed to process row for symbol {row.get('Symbol', 'Unknown')}: {e}"
+                    )
                     continue
 
             # Commit the batch transaction
             conn.commit()
-            logger.info(f"Processed batch {start_idx//batch_size + 1}: {len(batch_df)} rows, {successful_inserts} successful, {failed_inserts} failed")
+            logger.info(
+                f"Processed batch {start_idx // batch_size + 1}: {len(batch_df)} rows, {successful_inserts} successful, {failed_inserts} failed"
+            )
 
         except sqlite3.Error as e:
             # Rollback on database errors
             conn.rollback()
             failed_inserts += len(batch_df)
-            logger.error(f"Database error in batch {start_idx//batch_size + 1}, rolling back: {e}")
+            logger.error(
+                f"Database error in batch {start_idx // batch_size + 1}, rolling back: {e}"
+            )
 
             # Retry logic for database errors
             if max_retries > 0:
-                logger.info(f"Retrying batch {start_idx//batch_size + 1} ({max_retries} retries remaining)")
+                logger.info(
+                    f"Retrying batch {start_idx // batch_size + 1} ({max_retries} retries remaining)"
+                )
                 time.sleep(0.1)  # Brief pause before retry
                 return save_earnings_data(batch_df, conn, max_retries - 1)
 
-    logger.info(f"Database save operation completed: {successful_inserts} successful, {failed_inserts} failed")
+    logger.info(
+        f"Database save operation completed: {successful_inserts} successful, {failed_inserts} failed"
+    )
     if successful_inserts > 0:
-        logger.info(f"Successfully saved {successful_inserts} earnings reports to the database.")
+        logger.info(
+            f"Successfully saved {successful_inserts} earnings reports to the database."
+        )
     if failed_inserts > 0:
-        logger.error(f"Failed to save {failed_inserts} earnings reports due to data issues.")
+        logger.error(
+            f"Failed to save {failed_inserts} earnings reports due to data issues."
+        )
 
     # ---------------------------------------------------------------------------
+
+
 # Data validation helpers
 # ---------------------------------------------------------------------------
 
@@ -201,7 +231,7 @@ def _validate_ticker(ticker: str) -> str | None:
         return None
 
     # Remove any potentially problematic characters
-    ticker_clean = ''.join(c for c in ticker if c.isalnum() or c in '.-')
+    ticker_clean = "".join(c for c in ticker if c.isalnum() or c in ".-")
     return ticker_clean.upper() if ticker_clean else None
 
 
@@ -262,7 +292,10 @@ def _validate_string(value: Any) -> str | None:
 
     return value_str
 
-def fetch_urls_from_db(db_conn: sqlite3.Connection, tickers: list[str], url_type: str) -> list[str]:
+
+def fetch_urls_from_db(
+    db_conn: sqlite3.Connection, tickers: list[str], url_type: str
+) -> list[str]:
     """Fetch URLs from the database for a given list of tickers and URL type."""
     if not tickers:
         return []
@@ -273,7 +306,7 @@ def fetch_urls_from_db(db_conn: sqlite3.Connection, tickers: list[str], url_type
 
     params = tickers + [url_type]
     cursor.execute(query, params)
-    
+
     urls = [row[0] for row in cursor.fetchall()]
     return urls
 
@@ -283,7 +316,6 @@ def save_profile_to_db(
     profile: Profile,
     db_conn: sqlite3.Connection,
 ) -> None:
-
     if profile.website_url:
         add_url(company_ticker=ticker, url_type="website", url=profile.website_url)
 
@@ -305,8 +337,5 @@ def save_profile_to_db(
             logger.exception("DB error while updating company %s: %s", ticker, exc)
             db_conn.rollback()
             return
-        
+
     logger.info("Company %s profile updated successfully", ticker)
-
-
-    

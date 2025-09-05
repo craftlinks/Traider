@@ -1,4 +1,5 @@
 """Business Wire HTML poller - refactored version."""
+
 from __future__ import annotations
 
 import re
@@ -23,7 +24,7 @@ BASE_URL: str = "https://www.businesswire.com"
 
 class BusinessWirePoller(PlaywrightMixin, HTMLPoller):
     """Business Wire HTML scraping poller."""
-    
+
     def __init__(self):
         config = PollerConfig.from_env(
             "BW",
@@ -48,7 +49,9 @@ class BusinessWirePoller(PlaywrightMixin, HTMLPoller):
 
         # Call HTMLPoller constructor via super() chain; PlaywrightMixin.__init__
         # runs earlier (due to MRO) and starts the crawler.
-        super().__init__(LIST_URL, config, use_cloudscraper=False, extra_headers=extra_headers)
+        super().__init__(
+            LIST_URL, config, use_cloudscraper=False, extra_headers=extra_headers
+        )
 
     def get_poller_name(self) -> str:
         return "Business Wire"
@@ -63,21 +66,25 @@ class BusinessWirePoller(PlaywrightMixin, HTMLPoller):
         #     f.write(html)
 
         # Find the news items list
-        news_items_scope = re.search(r'<ul class="bw-news-items">([\s\S]*?)</ul>', html, re.IGNORECASE)
+        news_items_scope = re.search(
+            r'<ul class="bw-news-items">([\s\S]*?)</ul>', html, re.IGNORECASE
+        )
         if not news_items_scope:
             return items
 
         # Extract individual news items
         news_items = re.findall(
-            r'<li class="bw-news-item">([\s\S]*?)</li>', 
-            news_items_scope.group(1), 
-            re.IGNORECASE
+            r'<li class="bw-news-item">([\s\S]*?)</li>',
+            news_items_scope.group(1),
+            re.IGNORECASE,
         )
 
         for item_html in news_items:
             href_match = re.search(r'href="([^"]+)"', item_html)
             title_match = re.search(r"<h2>([^<]+)</h2>", item_html)
-            summary_match = re.search(r'<div class="bw-news-item-snippet">([\s\S]*?)</div>', item_html)
+            summary_match = re.search(
+                r'<div class="bw-news-item-snippet">([\s\S]*?)</div>', item_html
+            )
             ts_match = re.search(r'<time datetime="([^"]+)">', item_html)
 
             if not href_match or not title_match:
@@ -88,15 +95,21 @@ class BusinessWirePoller(PlaywrightMixin, HTMLPoller):
             summary = strip_tags(summary_match.group(1)) if summary_match else None
             timestamp = ts_match.group(1).strip() if ts_match else None
 
-            items.append(BaseItem(
-                id=url,  # Use URL as ID since it's unique
-                title=title,
-                url=url,
-                summary=summary,
-                timestamp=BaseItem.parse_iso_utc(timestamp) if timestamp else None
-            ))
+            items.append(
+                BaseItem(
+                    id=url,  # Use URL as ID since it's unique
+                    title=title,
+                    url=url,
+                    summary=summary,
+                    timestamp=BaseItem.parse_iso_utc(timestamp) if timestamp else None,
+                )
+            )
 
-        logger.debug("Found %d raw items, created %d BaseItem objects.", len(news_items), len(items))
+        logger.debug(
+            "Found %d raw items, created %d BaseItem objects.",
+            len(news_items),
+            len(items),
+        )
         return items
 
     def fetch_data(self):  # type: ignore[override]
@@ -112,7 +125,6 @@ class BusinessWirePoller(PlaywrightMixin, HTMLPoller):
         return super().parse_items(data)
 
 
-
 def run_poller(
     polling_interval_seconds: int | None = None,
     user_agent: str | None = None,
@@ -120,6 +132,7 @@ def run_poller(
     """Run the Business Wire poller."""
     poller = BusinessWirePoller()
     poller.run(polling_interval_seconds, user_agent)
+
 
 if __name__ == "__main__":
     run_poller()

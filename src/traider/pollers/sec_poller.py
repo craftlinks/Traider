@@ -1,4 +1,5 @@
 """SEC 8-K filings Atom feed poller - refactored version."""
+
 from __future__ import annotations
 
 from datetime import datetime
@@ -14,6 +15,7 @@ try:
         fetch_submission_text,
         analyze_and_extract_8k,
     )
+
     HAS_SEC_PARSER = True
 except ImportError:
     HAS_SEC_PARSER = False
@@ -27,14 +29,13 @@ logger = logging.getLogger(__name__)
 
 
 # Configuration
-ATOM_FEED_URL: str = (
-    "https://www.sec.gov/cgi-bin/browse-edgar?action=getcurrent&CIK=&type=8-K&owner=exclude&count=100&output=atom"
-)
+ATOM_FEED_URL: str = "https://www.sec.gov/cgi-bin/browse-edgar?action=getcurrent&CIK=&type=8-K&owner=exclude&count=100&output=atom"
 
 
 @dataclass
 class SECItem(BaseItem):
     """SEC 8-K item enriched with structured metadata for downstream workers."""
+
     items: list[str] | None = None
     items_tier_map: dict[str, int] | None = None
     highest_item_tier: int | None = None
@@ -47,13 +48,13 @@ class SECItem(BaseItem):
 
 class SECPoller(AtomFeedPoller):
     """SEC 8-K filings Atom feed poller with specialized parsing."""
-    
+
     def __init__(self):
         config = PollerConfig.from_env(
             "SEC",
             default_interval=3,
-            default_user_agent="TraderSECWatcher/1.0 admin@example.com", 
-            default_min_interval=0.2  # SEC fair access: 5 req/sec
+            default_user_agent="TraderSECWatcher/1.0 admin@example.com",
+            default_min_interval=0.2,  # SEC fair access: 5 req/sec
         )
         super().__init__(ATOM_FEED_URL, config)
 
@@ -69,9 +70,15 @@ class SECPoller(AtomFeedPoller):
         if not new_items:
             return
 
-        if (not HAS_SEC_PARSER) or (
-            get_filing_text_url is None or fetch_submission_text is None or analyze_and_extract_8k is None
-        ) or self.config.skip_extraction:
+        if (
+            (not HAS_SEC_PARSER)
+            or (
+                get_filing_text_url is None
+                or fetch_submission_text is None
+                or analyze_and_extract_8k is None
+            )
+            or self.config.skip_extraction
+        ):
             # Use the default behavior
             super().handle_new_items(new_items)
             return
@@ -83,13 +90,21 @@ class SECPoller(AtomFeedPoller):
             try:
                 txt_url = get_filing_text_url(base_item.url, session=self.session)
                 if not txt_url:
-                    logger.warning("[PARSER] No .txt submission link found on index page.")
+                    logger.warning(
+                        "[PARSER] No .txt submission link found on index page."
+                    )
                 else:
-                    submission_text = fetch_submission_text(txt_url, session=self.session)
+                    submission_text = fetch_submission_text(
+                        txt_url, session=self.session
+                    )
                     if not submission_text:
                         logger.warning("[PARSER] Failed to fetch submission text.")
                     else:
-                        result = analyze_and_extract_8k(txt_url, session=self.session, prefetched_text=submission_text)
+                        result = analyze_and_extract_8k(
+                            txt_url,
+                            session=self.session,
+                            prefetched_text=submission_text,
+                        )
                         if not result:
                             logger.warning("[PARSER] Analysis failed.")
                         else:
@@ -128,16 +143,21 @@ class SECPoller(AtomFeedPoller):
 
     def extract_article_text(self, item: BaseItem) -> str | None:
         """Extract SEC filing text using specialized parser if available."""
-        if not HAS_SEC_PARSER or get_filing_text_url is None or fetch_submission_text is None or analyze_and_extract_8k is None:
+        if (
+            not HAS_SEC_PARSER
+            or get_filing_text_url is None
+            or fetch_submission_text is None
+            or analyze_and_extract_8k is None
+        ):
             return super().extract_article_text(item)
-        
+
         try:
             # Try to get the .txt submission URL
             txt_url = get_filing_text_url(item.url, session=self.session)
             if not txt_url:
                 logger.warning("[PARSER] No .txt submission link found on index page.")
                 return None
-                
+
             # Fetch and analyze the submission
             submission_text = fetch_submission_text(txt_url, session=self.session)
             if not submission_text:
@@ -145,7 +165,9 @@ class SECPoller(AtomFeedPoller):
                 return None
 
             # Analyze 8-K and extract exhibits
-            result = analyze_and_extract_8k(txt_url, session=self.session, prefetched_text=submission_text)
+            result = analyze_and_extract_8k(
+                txt_url, session=self.session, prefetched_text=submission_text
+            )
             if not result:
                 logger.warning("[PARSER] Analysis failed.")
                 return None
@@ -157,7 +179,7 @@ class SECPoller(AtomFeedPoller):
                 return result.fallback_text
             else:
                 return None
-                
+
         except Exception as parse_exc:
             logger.exception("[PARSER] Unexpected parsing error: %s", parse_exc)
             return None

@@ -33,5 +33,6 @@ class FixedSizeLRUSet:
             # Evict the oldest entry (FIFO order of OrderedDict)
             self._store.popitem(last=False)
         return False
-    
+
+
 __all__: list[str] = ["FixedSizeLRUSet"]

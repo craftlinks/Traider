@@ -107,24 +107,31 @@ def get_shared_cache() -> CacheInterface:  # noqa: D401
             def close(self):  # noqa: D401
                 self._data.clear()
 
-        _shared_cache = _InMemoryCache(max_items=int(os.getenv("TRAIDER_CACHE_MAX_ITEMS", "50000")))
+        _shared_cache = _InMemoryCache(
+            max_items=int(os.getenv("TRAIDER_CACHE_MAX_ITEMS", "50000"))
+        )
         return _shared_cache
 
     # Persistent DiskCacheBackend ---------------------------------------
-    cache_dir = Path(os.getenv("TRAIDER_CACHE_DIR", str(Path.home() / ".traider_cache"))).expanduser()
+    cache_dir = Path(
+        os.getenv("TRAIDER_CACHE_DIR", str(Path.home() / ".traider_cache"))
+    ).expanduser()
     max_items = int(os.getenv("TRAIDER_CACHE_MAX_ITEMS", "50000"))
     size_limit_env = os.getenv("TRAIDER_CACHE_SIZE_LIMIT")
     size_limit = int(size_limit_env) if size_limit_env is not None else None
 
     from .disk_cache_backend import DiskCacheBackend
 
-    cache = DiskCacheBackend(directory=cache_dir, max_items=max_items, size_limit=size_limit)
+    cache = DiskCacheBackend(
+        directory=cache_dir, max_items=max_items, size_limit=size_limit
+    )
 
     if _truthy(os.getenv("TRAIDER_CLEAR_CACHE")):
         cache.clear()
 
     _shared_cache = cache
     return _shared_cache
+
 
 from .disk_cache_backend import DiskCacheBackend
 
@@ -190,7 +197,9 @@ def get_named_cache(
 
     from .disk_cache_backend import DiskCacheBackend  # local import to avoid cycles
 
-    cache = DiskCacheBackend(directory=cache_dir, max_items=max_items, size_limit=size_limit)
+    cache = DiskCacheBackend(
+        directory=cache_dir, max_items=max_items, size_limit=size_limit
+    )
 
     if clear:
         cache.clear()

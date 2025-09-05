@@ -10,6 +10,7 @@ from traider.yfinance import EarningsEvent
 # Adjust this path to match your project structure.
 DB_CONNECTION_PATH = "traider.db.database.get_db_connection"
 
+
 async def test_earnings_event_to_db(db_connection):
     """
     GIVEN an EarningsEvent instance
@@ -23,7 +24,7 @@ async def test_earnings_event_to_db(db_connection):
         ticker="TEST",
         company_name="Test Corp",
         event_name="Q4 2023",
-        time_type="BMO", # Before Market Open
+        time_type="BMO",  # Before Market Open
         earnings_call_time=datetime.fromisoformat("2023-12-31T12:00:00+00:00"),
         eps_estimate=1.25,
         eps_actual=1.30,
@@ -43,9 +44,7 @@ async def test_earnings_event_to_db(db_connection):
 
     # Verify the data was written correctly by querying the database directly
     cursor = db_connection.cursor()
-    cursor.execute(
-        "SELECT * FROM earnings_reports WHERE company_ticker = ?", ("TEST",)
-    )
+    cursor.execute("SELECT * FROM earnings_reports WHERE company_ticker = ?", ("TEST",))
     row = cursor.fetchone()
 
     assert row is not None
@@ -53,12 +52,12 @@ async def test_earnings_event_to_db(db_connection):
     assert row["eps_estimate"] == 1.25
     assert row["reported_eps"] == 1.30
     assert row["market_cap"] == 100_000_000.0
-    
+
     # Check that the company was also created in the companies table
     company_row = db_connection.execute(
         "SELECT * FROM companies WHERE ticker = ?", ("TEST",)
     ).fetchone()
-    
+
     assert company_row is not None
     assert company_row["company_name"] == "Test Corp"
 
@@ -77,14 +76,12 @@ async def test_profile_to_db_updates_company(db_connection):
     # ARRANGE: Pre-populate the database with a company
     db_connection.execute(
         "INSERT INTO companies (ticker, company_name) VALUES (?, ?)",
-        ("NVDA", "NVIDIA Corporation")
+        ("NVDA", "NVIDIA Corporation"),
     )
     db_connection.commit()
 
     test_profile = Profile(
-        website_url="https://nvidia.com",
-        sector="Technology",
-        industry="Semiconductors"
+        website_url="https://nvidia.com", sector="Technology", industry="Semiconductors"
     )
 
     # ACT
@@ -112,7 +109,7 @@ async def test_press_release_to_db(db_connection):
     # Pre-populate the database with a company for the foreign key constraint
     db_connection.execute(
         "INSERT INTO companies (ticker, company_name) VALUES (?, ?)",
-        ("TEST", "Test Corp")
+        ("TEST", "Test Corp"),
     )
     db_connection.commit()
 
@@ -126,7 +123,7 @@ async def test_press_release_to_db(db_connection):
         display_time="10:00 AM",
         company_name="Test Corp",
         raw_html="<html><body>Test</body></html>",
-        text_content="Test"
+        text_content="Test",
     )
 
     # 2. ACT
@@ -138,9 +135,7 @@ async def test_press_release_to_db(db_connection):
 
     # Verify the data was written correctly
     cursor = db_connection.cursor()
-    cursor.execute(
-        "SELECT * FROM press_releases WHERE company_ticker = ?", ("TEST",)
-    )
+    cursor.execute("SELECT * FROM press_releases WHERE company_ticker = ?", ("TEST",))
     row = cursor.fetchone()
 
     assert row is not None
@@ -158,6 +153,7 @@ async def test_press_release_to_db(db_connection):
 # ---------------------------------------------------------------------------
 # .from_db() helpers
 # ---------------------------------------------------------------------------
+
 
 def test_earnings_event_from_db(db_connection):
     """

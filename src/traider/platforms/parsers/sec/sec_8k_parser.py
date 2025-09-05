@@ -72,11 +72,13 @@ _INDEX_TO_TXT_CACHE: "OrderedDict[str, str]" = OrderedDict()
 _TXT_CONTENT_CACHE: "OrderedDict[str, str]" = OrderedDict()
 _MAX_CACHE_ENTRIES: Final[int] = 2048
 
+
 def _cache_get(cache: "OrderedDict[str, str]", key: str) -> Optional[str]:
     val = cache.get(key)
     if val is not None:
         cache.move_to_end(key)
     return val
+
 
 def _cache_put(cache: "OrderedDict[str, str]", key: str, value: str) -> None:
     cache[key] = value
@@ -101,7 +103,9 @@ TYPE_EX_99_2_REGEX: Final[re.Pattern[str]] = re.compile(
 )
 
 # Generic type extractor to support 99.3, 99.4 and others
-TYPE_LINE_REGEX: Final[re.Pattern[str]] = re.compile(r"<TYPE>\s*([^\s<]+)", re.IGNORECASE)
+TYPE_LINE_REGEX: Final[re.Pattern[str]] = re.compile(
+    r"<TYPE>\s*([^\s<]+)", re.IGNORECASE
+)
 
 # Extract inner TEXT block
 TEXT_CONTENT_REGEX: Final[re.Pattern[str]] = re.compile(
@@ -244,7 +248,9 @@ def _extract_exhibit_block(full_submission_text: str) -> Optional[str]:
     if chosen is None:
         # Dynamically match EX-99.3 / EX-99.4 without precompiled patterns
         for suffix in ("3", "4"):
-            dynamic = re.compile(rf"<TYPE>\s*EX[-\s]?99(?:\.0?{suffix}|\.{suffix})\b", re.IGNORECASE)
+            dynamic = re.compile(
+                rf"<TYPE>\s*EX[-\s]?99(?:\.0?{suffix}|\.{suffix})\b", re.IGNORECASE
+            )
             chosen = pick_block(dynamic)
             if chosen is not None:
                 break
@@ -478,7 +484,9 @@ def _extract_acceptance_datetime_iso_utc(full_submission_text: str) -> Optional[
             return None
         raw = m.group(1)
         # Parse naive then localize as US/Eastern to handle DST correctly
-        dt_local = datetime.strptime(raw, "%Y%m%d%H%M%S").replace(tzinfo=ZoneInfo("US/Eastern"))
+        dt_local = datetime.strptime(raw, "%Y%m%d%H%M%S").replace(
+            tzinfo=ZoneInfo("US/Eastern")
+        )
         dt_utc = dt_local.astimezone(ZoneInfo("UTC"))
         return dt_utc.replace(microsecond=0).isoformat().replace("+00:00", "Z")
     except Exception:
@@ -544,7 +552,9 @@ def analyze_and_extract_8k(
                 if fallback_text is not None:
                     fallback_text = re.sub(r"\n{3,}", "\n\n", fallback_text)
                     fallback_text = re.sub(r"[\t\x0b\x0c\r ]+", " ", fallback_text)
-                    fallback_text = re.sub(r" *\n *", "\n", fallback_text).strip() or None
+                    fallback_text = (
+                        re.sub(r" *\n *", "\n", fallback_text).strip() or None
+                    )
                     fallback_used = fallback_text is not None
 
         return EightKParseResult(
@@ -557,7 +567,9 @@ def analyze_and_extract_8k(
             has_material_contract_exhibit=has_material_contract,
             fallback_used=fallback_used,
             fallback_text=fallback_text,
-            acceptance_datetime_utc=BaseItem.parse_iso_utc(acceptance_iso_utc) if acceptance_iso_utc else None,
+            acceptance_datetime_utc=BaseItem.parse_iso_utc(acceptance_iso_utc)
+            if acceptance_iso_utc
+            else None,
         )
     except Exception:
         return None
@@ -574,5 +586,3 @@ __all__ = [
     "parse_exhibit_99_1",
     "analyze_and_extract_8k",
 ]
-
-

@@ -33,11 +33,13 @@ earnings_polling_tasks: Dict[str, asyncio.Task] = {}
 # Channel definitions
 # ---------------------------------------------------------------------------
 
+
 class Channel(str, Enum):
     EARNINGS = "earnings"
     PRESS_RELEASE = "press_release"
     PRESS_RELEASE_CONTENT = "press_release_content"
     LLM_EARNINGS_REPORT = "llm_earnings_report"
+
 
 # ---------------------------------------------------------------------------
 # Message Bus Setup
@@ -54,6 +56,7 @@ openai_api_key = os.getenv("OPENAI_API_KEY")
 lm = LM(model="gpt-4.1-mini", api_key=openai_api_key)
 configure(lm=lm)
 
+
 class PressReleaseJudgement(Signature):
     """
     Judgement if the article is an earnings report and whether it is a BUY or SELL judgement.
@@ -62,9 +65,16 @@ class PressReleaseJudgement(Signature):
     """
 
     article_text: str = InputField(desc="The text of the article")
-    is_earnings_report: bool = OutputField(desc="Indicate whether the article is an earnings report")
-    judgement: Optional[str] = OutputField(desc="Explain the reasoning for your judgement")
-    judgement_score: Optional[int] = OutputField(desc="A score between -10 and 10 for the BUY or SELL judgement")
+    is_earnings_report: bool = OutputField(
+        desc="Indicate whether the article is an earnings report"
+    )
+    judgement: Optional[str] = OutputField(
+        desc="Explain the reasoning for your judgement"
+    )
+    judgement_score: Optional[int] = OutputField(
+        desc="A score between -10 and 10 for the BUY or SELL judgement"
+    )
+
 
 press_release_judgement = Predict(PressReleaseJudgement)
 
@@ -75,6 +85,7 @@ press_release_judgement = Predict(PressReleaseJudgement)
 # ---------------------------------------------------------------------------
 # Earnings Producer
 # ---------------------------------------------------------------------------
+
 
 @router.route(publish_to=Channel.EARNINGS)
 async def earnings_producer(router: MessageRouter):
@@ -87,31 +98,38 @@ async def earnings_producer(router: MessageRouter):
                 *(router.broker.publish(Channel.EARNINGS, e) for e in earnings)
             )
         await asyncio.sleep(EARNINGS_PRODUCER_INTERVAL)
-    
 
 
 # ---------------------------------------------------------------------------
 # Earnings Consumer
 # ---------------------------------------------------------------------------
 
+
 @router.route(listen_to=Channel.EARNINGS)
 async def earnings_consumer(router: MessageRouter, earning: yf.EarningsEvent):
-    
     async def poll_for_press_release(router: MessageRouter, ticker: str):
         logger.debug(f"Polling for press release for {ticker}")
         while True:
             try:
-                press_release: yf.PressRelease | None = await yf.get_latest_press_release(ticker)
+                press_release: (
+                    yf.PressRelease | None
+                ) = await yf.get_latest_press_release(ticker)
                 # Compose a deterministic *key* from URL + publication date (hashing not necessary)
                 if press_release is not None:
                     id_ = f"{press_release.url}|{press_release.pub_date}"
                     # Skip duplicates using the LRU set (maintains max 10k ids)
                     if last_press_release_id.get(ticker) == id_:
                         # Already seen -> skip
-                        logger.debug("Press release %s for %s already processed – skipping", id_, ticker)
+                        logger.debug(
+                            "Press release %s for %s already processed – skipping",
+                            id_,
+                            ticker,
+                        )
                     else:
                         # New ID – publish
-                        await router.broker.publish(Channel.PRESS_RELEASE, press_release)
+                        await router.broker.publish(
+                            Channel.PRESS_RELEASE, press_release
+                        )
                         last_press_release_id[ticker] = id_
             except Exception:
                 logger.exception("Error while polling press release for %s", ticker)
@@ -122,11 +140,15 @@ async def earnings_consumer(router: MessageRouter, earning: yf.EarningsEvent):
             except asyncio.CancelledError:
                 logger.debug("Polling task for %s cancelled", ticker)
                 raise
-    
-    logger.debug(f"Received earnings event for {earning.ticker} at {earning.earnings_call_time}")
+
+    logger.debug(
+        f"Received earnings event for {earning.ticker} at {earning.earnings_call_time}"
+    )
     # If we have already completed polling for this ticker (earnings report found), skip spawning a new task
     if earning.ticker in processed_tickers:
-        logger.debug(f"Polling for {earning.ticker} was already completed – skipping new polling task")
+        logger.debug(
+            f"Polling for {earning.ticker} was already completed – skipping new polling task"
+        )
         return
 
     # If we already have an active polling task for this ticker, skip spawning a new one
@@ -134,10 +156,14 @@ async def earnings_consumer(router: MessageRouter, earning: yf.EarningsEvent):
     if existing_task is not None and not existing_task.done():
         logger.debug(f"Polling task for {earning.ticker} is already running – skipping")
         return
-    logger.info(f"Received new earnings event for {earning.ticker} at {earning.earnings_call_time}")
+    logger.info(
+        f"Received new earnings event for {earning.ticker} at {earning.earnings_call_time}"
+    )
     logger.info(f"Spawning press-release polling task for {earning.ticker}")
 
-    task = router.spawn_task(poll_for_press_release(router, earning.ticker), ttl=3600*24)
+    task = router.spawn_task(
+        poll_for_press_release(router, earning.ticker), ttl=3600 * 24
+    )
     earnings_polling_tasks[earning.ticker] = task
 
     # Remove task from the registry once it completes or is cancelled so that
@@ -151,6 +177,7 @@ async def earnings_consumer(router: MessageRouter, earning: yf.EarningsEvent):
 # ---------------------------------------------------------------------------
 # Save Earnings to DB
 # ---------------------------------------------------------------------------
+
 
 @router.route(listen_to=Channel.EARNINGS)
 async def save_earnings_to_db(router: MessageRouter, earning: yf.EarningsEvent):
@@ -166,6 +193,7 @@ async def save_earnings_to_db(router: MessageRouter, earning: yf.EarningsEvent):
 # Process Press Release
 # ---------------------------------------------------------------------------
 
+
 @router.route(listen_to=Channel.PRESS_RELEASE, publish_to=Channel.PRESS_RELEASE_CONTENT)
 async def process_press_release(router: MessageRouter, press_release: yf.PressRelease):
     logger.info(f"Processing press release for {press_release.ticker}")
@@ -178,14 +206,18 @@ async def process_press_release(router: MessageRouter, press_release: yf.PressRe
     logger.debug(f"Saved press release for {press_release.ticker} to db with id {id}")
     return press_release
 
+
 # ---------------------------------------------------------------------------
 # Judge Press Release
 # ---------------------------------------------------------------------------
 
+
 @router.route(listen_to=Channel.PRESS_RELEASE_CONTENT)
 async def judge_press_release(router: MessageRouter, press_release: yf.PressRelease):
     logger.debug(f"Judging press release for {press_release.ticker}")
-    judgement = await press_release_judgement.acall(article_text=press_release.text_content)
+    judgement = await press_release_judgement.acall(
+        article_text=press_release.text_content
+    )
     if judgement.is_earnings_report:
         msg = {
             "ticker": press_release.ticker,
@@ -195,34 +227,47 @@ async def judge_press_release(router: MessageRouter, press_release: yf.PressRele
         # the ongoing polling task for this ticker to avoid unnecessary network calls.
         task = earnings_polling_tasks.get(press_release.ticker)
         if task is not None and not task.done():
-            logger.info("Cancelling polling task for %s – earnings report found", press_release.ticker)
+            logger.info(
+                "Cancelling polling task for %s – earnings report found",
+                press_release.ticker,
+            )
             processed_tickers.add(press_release.ticker)
             task.cancel()
         await router.broker.publish(Channel.LLM_EARNINGS_REPORT, msg)
     else:
-        logger.debug(f"Press release for {press_release.ticker} is not an earnings report")
+        logger.debug(
+            f"Press release for {press_release.ticker} is not an earnings report"
+        )
+
 
 # ---------------------------------------------------------------------------
 # Publish Earnings Report
 # ---------------------------------------------------------------------------
 
+
 @router.route(listen_to=Channel.LLM_EARNINGS_REPORT)
 async def publish_earnings_report(router: MessageRouter, judgement: dict):
     logger.debug(f"Publishing earnings report for {judgement['ticker']}")
-    if judgement['judgement'].is_earnings_report:
+    if judgement["judgement"].is_earnings_report:
         logger.info(f"\n{judgement['judgement'].judgement}")
-        logger.info(f"{judgement['ticker']} SELL/BUY SCORE: {judgement['judgement'].judgement_score}")
+        logger.info(
+            f"{judgement['ticker']} SELL/BUY SCORE: {judgement['judgement'].judgement_score}"
+        )
     else:
-        logger.debug(f"Press release for {judgement['ticker']} is not an earnings report")
+        logger.debug(
+            f"Press release for {judgement['ticker']} is not an earnings report"
+        )
 
 
 # ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
 
+
 async def main():
     async with asyncio.TaskGroup() as tg:
         tg.create_task(router.run())
+
 
 if __name__ == "__main__":
     asyncio.run(main())

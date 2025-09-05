@@ -70,10 +70,14 @@ def add_company_and_exchange(
             )
 
             # 3. Retrieve exchange id
-            cursor.execute("SELECT id FROM exchanges WHERE name = ?", (exchange_name.upper(),))
+            cursor.execute(
+                "SELECT id FROM exchanges WHERE name = ?", (exchange_name.upper(),)
+            )
             exchange_row = cursor.fetchone()
             if exchange_row is None:
-                raise RuntimeError(f"Unable to resolve exchange record for {exchange_name}")
+                raise RuntimeError(
+                    f"Unable to resolve exchange record for {exchange_name}"
+                )
             exchange_id: int = exchange_row["id"]  # type: ignore[index]
 
             # Ensure company row exists (in case insertion was ignored due to
@@ -100,20 +104,28 @@ def add_company_and_exchange(
             )
 
             conn.commit()
-            logger.debug("Added/linked company %s on exchange %s", ticker, exchange_name)
+            logger.debug(
+                "Added/linked company %s on exchange %s", ticker, exchange_name
+            )
         except sqlite3.Error as exc:
             conn.rollback()
             logger.exception("SQLite error while adding company %s: %s", ticker, exc)
             raise
 
 
-def add_url(*, company_ticker: str, url_type: str, url: str, conn: sqlite3.Connection | None = None) -> None:
+def add_url(
+    *,
+    company_ticker: str,
+    url_type: str,
+    url: str,
+    conn: sqlite3.Connection | None = None,
+) -> None:
     """Add or replace a URL for a company.
 
     The UNIQUE(company_ticker, url_type) constraint ensures idempotency. We use
     "REPLACE" semantics to update an existing URL of the same type.
     """
-    
+
     owns_connection = conn is None
     if conn is None:
         conn = get_db_connection()
@@ -134,7 +146,9 @@ def add_url(*, company_ticker: str, url_type: str, url: str, conn: sqlite3.Conne
     except sqlite3.Error as exc:
         if owns_connection:
             conn.rollback()
-        logger.exception("SQLite error while adding url for %s: %s", company_ticker, exc)
+        logger.exception(
+            "SQLite error while adding url for %s: %s", company_ticker, exc
+        )
         raise
     finally:
         if owns_connection:
@@ -156,7 +170,9 @@ if TYPE_CHECKING:  # pragma: no cover – avoid runtime import cycles
     )
 
 
-def save_profile(*, ticker: str, profile: "Profile", conn: sqlite3.Connection | None = None) -> None:
+def save_profile(
+    *, ticker: str, profile: "Profile", conn: sqlite3.Connection | None = None
+) -> None:
     """Persist *profile* information for *ticker*.
 
     This function updates the ``companies`` and ``urls`` tables as required. It
@@ -170,7 +186,12 @@ def save_profile(*, ticker: str, profile: "Profile", conn: sqlite3.Connection | 
     try:
         # 1. Persist homepage URL (if provided)
         if profile.website_url:
-            add_url(company_ticker=ticker, url_type="website", url=profile.website_url, conn=conn)
+            add_url(
+                company_ticker=ticker,
+                url_type="website",
+                url=profile.website_url,
+                conn=conn,
+            )
 
         # 2. Persist sector / industry metadata (if any)
         if profile.sector or profile.industry:
@@ -198,7 +219,9 @@ def save_profile(*, ticker: str, profile: "Profile", conn: sqlite3.Connection | 
             conn.close()
 
 
-def save_earnings_event(event: "EarningsEvent", conn: sqlite3.Connection | None = None) -> int | None:  # noqa: C901 – complex, acceptable
+def save_earnings_event(
+    event: "EarningsEvent", conn: sqlite3.Connection | None = None
+) -> int | None:  # noqa: C901 – complex, acceptable
     """Upsert *event* into ``earnings_reports``.
 
     Returns the primary key *id* of the affected row or *None* on failure.
@@ -224,7 +247,11 @@ def save_earnings_event(event: "EarningsEvent", conn: sqlite3.Connection | None 
         call_time = _validate_datetime(event.earnings_call_time)
 
         if not symbol or not company_name:
-            logger.warning("Skipping invalid earnings event – symbol=%s, company=%s", event.ticker, event.company_name)
+            logger.warning(
+                "Skipping invalid earnings event – symbol=%s, company=%s",
+                event.ticker,
+                event.company_name,
+            )
             return None
 
         # Ensure company exists
@@ -271,7 +298,11 @@ def save_earnings_event(event: "EarningsEvent", conn: sqlite3.Connection | None 
         if row_id is None:
             if owns_connection:
                 conn.rollback()
-            logger.error("Unable to obtain primary key for earnings event (%s, %s)", symbol, call_time)
+            logger.error(
+                "Unable to obtain primary key for earnings event (%s, %s)",
+                symbol,
+                call_time,
+            )
             return None
 
         if owns_connection:
@@ -281,14 +312,18 @@ def save_earnings_event(event: "EarningsEvent", conn: sqlite3.Connection | None 
     except sqlite3.Error as exc:
         if owns_connection:
             conn.rollback()
-        logger.exception("SQLite error while saving earnings event for %s: %s", event.ticker, exc)
+        logger.exception(
+            "SQLite error while saving earnings event for %s: %s", event.ticker, exc
+        )
         return None
     finally:
         if owns_connection:
             conn.close()
 
 
-def save_press_release(release: "PressRelease", conn: sqlite3.Connection | None = None) -> int | None:
+def save_press_release(
+    release: "PressRelease", conn: sqlite3.Connection | None = None
+) -> int | None:
     """Upsert *release* into ``press_releases`` table and return its PK id."""
 
     owns_connection = conn is None
@@ -323,14 +358,18 @@ def save_press_release(release: "PressRelease", conn: sqlite3.Connection | None 
         row_id = cursor.lastrowid
 
         if not row_id:
-            row = conn.execute("SELECT id FROM press_releases WHERE url = ?;", (release.url,)).fetchone()
+            row = conn.execute(
+                "SELECT id FROM press_releases WHERE url = ?;", (release.url,)
+            ).fetchone()
             if row is not None:
                 row_id = row[0]
 
         if row_id is None:
             if owns_connection:
                 conn.rollback()
-            logger.error("Unable to obtain primary key for press release %s", release.url)
+            logger.error(
+                "Unable to obtain primary key for press release %s", release.url
+            )
             return None
 
         if owns_connection:
@@ -339,7 +378,9 @@ def save_press_release(release: "PressRelease", conn: sqlite3.Connection | None 
     except sqlite3.Error as exc:
         if owns_connection:
             conn.rollback()
-        logger.exception("SQLite error while saving press release %s: %s", release.url, exc)
+        logger.exception(
+            "SQLite error while saving press release %s: %s", release.url, exc
+        )
         return None
     finally:
         if owns_connection:
@@ -349,6 +390,7 @@ def save_press_release(release: "PressRelease", conn: sqlite3.Connection | None 
 # ---------------------------------------------------------------------------
 # Earnings-specific helpers
 # ---------------------------------------------------------------------------
+
 
 def add_earnings_report(report: Dict[str, object]) -> None:
     """Insert or update an earnings report.
@@ -371,8 +413,7 @@ def add_earnings_report(report: Dict[str, object]) -> None:
         - surprise_percentage (float | None)
         - market_cap (int | None) – *parsed to raw integer dollars*.
     """
-    sql = (
-        """
+    sql = """
         INSERT INTO earnings_reports (
             company_ticker,
             report_date,
@@ -407,7 +448,6 @@ def add_earnings_report(report: Dict[str, object]) -> None:
             market_cap_on_report_date = excluded.market_cap_on_report_date,
             updated_at              = CURRENT_TIMESTAMP;
         """
-    )
 
     with get_db_connection() as conn:
         try:
@@ -432,6 +472,7 @@ def add_earnings_report(report: Dict[str, object]) -> None:
 # ---------------------------------------------------------------------------
 # Query helpers
 # ---------------------------------------------------------------------------
+
 
 def get_company_by_ticker(ticker: str) -> Optional[Dict[str, str | None]]:
     """Return company row and aggregated exchange list for the given ticker."""
@@ -487,5 +528,3 @@ def get_earnings_for_ticker(ticker: str) -> List[Dict[str, object]]:
             (ticker.upper(),),
         )
         return [dict(r) for r in cursor.fetchall()]
-
-

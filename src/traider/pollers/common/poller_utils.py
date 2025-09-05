@@ -1,4 +1,5 @@
 """Shared utilities for all pollers."""
+
 from __future__ import annotations
 
 import re
@@ -58,10 +59,10 @@ def strip_tags(html: str) -> str:
 
 
 def build_session(
-    user_agent: str, 
-    min_interval_seconds: float, 
+    user_agent: str,
+    min_interval_seconds: float,
     use_cloudscraper: bool = False,
-    extra_headers: dict | None = None
+    extra_headers: dict | None = None,
 ) -> Session:
     """Create a requests Session with retries, throttle, and proper headers."""
     if use_cloudscraper:
@@ -77,7 +78,9 @@ def build_session(
         respect_retry_after_header=True,
         allowed_methods=frozenset(["GET", "HEAD"]),
     )
-    adapter = ThrottledHTTPAdapter(min_interval_seconds=min_interval_seconds, max_retries=retry_strategy)
+    adapter = ThrottledHTTPAdapter(
+        min_interval_seconds=min_interval_seconds, max_retries=retry_strategy
+    )
     session.mount("https://", adapter)
     session.mount("http://", adapter)
 
@@ -87,14 +90,16 @@ def build_session(
     }
     if extra_headers:
         default_headers.update(extra_headers)
-    
+
     session.headers.update(default_headers)
     return session
 
     # Note: legacy extract_primary_text_from_html has been removed.
 
 
-def extract_text_from_html(html: str, base_url: Optional[str] | None = None) -> Optional[str]:
+def extract_text_from_html(
+    html: str, base_url: Optional[str] | None = None
+) -> Optional[str]:
     """Extract readable text from an HTML document.
 
     Utilises the default simple text extractor to obtain the main readable

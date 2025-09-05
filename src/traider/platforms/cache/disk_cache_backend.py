@@ -65,7 +65,9 @@ class DiskCacheBackend(CacheInterface):
         # count (max_items) becomes the primary eviction mechanism.
         _size_limit = int(size_limit) if size_limit is not None else 2**63 - 1
 
-        self._cache = _DiskCache(directory, size_limit=_size_limit, cull_limit=cull_limit)
+        self._cache = _DiskCache(
+            directory, size_limit=_size_limit, cull_limit=cull_limit
+        )
         self._max_items = max_items
         # Ensure the cache is flushed on interpreter exit (best-effort)
         atexit.register(self.close)

@@ -22,8 +22,12 @@ logging.getLogger("httpx").setLevel(logging.WARNING)
 
 
 async def main() -> None:
-    parser = argparse.ArgumentParser(description="Fetch latest Yahoo Finance press release for a ticker.")
-    parser.add_argument("ticker", nargs="?", default="SMTC", help="Stock ticker symbol (default: SMTC)")
+    parser = argparse.ArgumentParser(
+        description="Fetch latest Yahoo Finance press release for a ticker."
+    )
+    parser.add_argument(
+        "ticker", nargs="?", default="SMTC", help="Stock ticker symbol (default: SMTC)"
+    )
 
     args = parser.parse_args()
 
@@ -40,7 +44,11 @@ async def main() -> None:
         html_body: str = await yf.get_press_release_content(pr.url)
 
         snippet_len = 500  # show only a small preview in the console
-        preview = (html_body[:snippet_len] + "…") if len(html_body) > snippet_len else html_body
+        preview = (
+            (html_body[:snippet_len] + "…")
+            if len(html_body) > snippet_len
+            else html_body
+        )
         logger.info("Article HTML preview (%d chars):\n%s", len(html_body), preview)
 
         # --- Persist full HTML to disk -------------------------------------------------
@@ -51,6 +59,7 @@ async def main() -> None:
             logger.info("Full HTML saved to %s", out_path)
         except Exception as io_exc:
             logger.error("Failed to save HTML to %s: %s", out_path, io_exc)
+
 
 if __name__ == "__main__":
     asyncio.run(main())
