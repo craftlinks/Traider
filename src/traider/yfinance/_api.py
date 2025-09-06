@@ -381,9 +381,17 @@ async def get_press_release_content(url: str) -> str:
             soup = BeautifulSoup(html_text, "html.parser")
 
             atoms_div = soup.find("div", class_="atoms-wrapper")
-            if atoms_div is not None:
-                # Return plain text instead of raw HTML
-                return atoms_div.get_text(separator=" ", strip=True)  # type: ignore[attr-defined]
+            # NEW: also capture any additional content hidden behind the "read-more-wrapper" div
+            read_more_div = soup.find("div", class_="read-more-wrapper")
+            if atoms_div is not None or read_more_div is not None:
+                parts: list[str] = []
+                if atoms_div is not None:
+                    parts.append(atoms_div.get_text(separator=" ", strip=True))  # type: ignore[attr-defined]
+                if read_more_div is not None:
+                    parts.append(read_more_div.get_text(separator=" ", strip=True))  # type: ignore[attr-defined]
+
+                # Return concatenated plain text from both parts (if both exist)
+                return " ".join(parts)
 
             script_tag = soup.find(
                 "script",
