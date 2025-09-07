@@ -71,6 +71,28 @@ for name in ("httpx", "httpcore", "LiteLLM"):
 
 EARNINGS_PRODUCER_INTERVAL = 60*60
 PRESS_RELEASE_POLL_INTERVAL = 10
+# ---------------------------------------------------------------------------
+# Concurrency limits for outbound Yahoo Finance requests
+# ---------------------------------------------------------------------------
+
+# Maximum number of concurrent requests we allow to Yahoo Finance.  Adjust as
+# needed depending on observed rate-limits / latency.
+MAX_CONCURRENT_YF_REQUESTS: Final = 5
+
+# A shared semaphore that guards all outbound Yahoo requests so that at most
+# *MAX_CONCURRENT_YF_REQUESTS* run in parallel.  It is created once at import
+# time and reused by all polling tasks.
+_yf_request_semaphore: asyncio.Semaphore = asyncio.Semaphore(MAX_CONCURRENT_YF_REQUESTS)
+
+# Small random jitter helper to avoid large synchronous request waves.  Jitter
+# is a fraction of the base poll interval so overall cadence remains similar.
+from random import random as _rand
+
+
+def _jitter(base: float) -> float:
+    """Return a random float in the range [0, base/4)."""
+
+    return _rand() * base / 4
 
 
 # Track active polling tasks per ticker to avoid spawning duplicates
@@ -154,9 +176,14 @@ async def poll_for_press_release(router: MessageRouter, ticker: str):
     logger.debug(f"Polling for press release for {ticker}")
     while True:
         try:
-            press_release: yf.PressRelease | None = await yf.get_latest_press_release(
-                ticker
-            )
+            # Limit the number of concurrent outbound requests using the shared
+            # semaphore.  The `async with` block ensures that we acquire a
+            # "slot" before performing the HTTP request and release it
+            # immediately afterwards, regardless of success or failure.
+            async with _yf_request_semaphore:
+                press_release: yf.PressRelease | None = (
+                    await yf.get_latest_press_release(ticker)
+                )
             # Compose a deterministic *key* from URL + publication date (hashing not necessary)
             if press_release is not None:
                 id_ = f"{press_release.url}|{press_release.pub_date}"
@@ -177,7 +204,9 @@ async def poll_for_press_release(router: MessageRouter, ticker: str):
 
         # Allow cancellation between polling cycles
         try:
-            await asyncio.sleep(PRESS_RELEASE_POLL_INTERVAL)
+            # Add a small random jitter so that many polling tasks started at
+            # the same time do not keep hitting Yahoo in perfect lock-step.
+            await asyncio.sleep(PRESS_RELEASE_POLL_INTERVAL + _jitter(PRESS_RELEASE_POLL_INTERVAL))
         except asyncio.CancelledError:
             logger.debug("Polling task for %s cancelled", ticker)
             raise
