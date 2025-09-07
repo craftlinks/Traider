@@ -30,7 +30,7 @@ LOG_FORMAT: Final = "%(asctime)s | %(levelname)s | %(name)s | %(message)s"
 
 class DiscordWebhookHandler(logging.Handler):
     """Send log records to a Discord channel via webhook."""
-    def __init__(self, webhook_url: str, level: int = logging.ERROR) -> None:
+    def __init__(self, webhook_url: str, level: int = logging.INFO) -> None:
         super().__init__(level)
         self.webhook_url = webhook_url
         self.client = httpx.Client(timeout=5.0)
@@ -59,7 +59,7 @@ root_logger.addHandler(file_handler)
 # Discord handler (only if webhook URL is present)
 discord_webhook_url = os.getenv("DISCORD_LOGS_WEBHOOK_URL")
 if discord_webhook_url:
-    discord_handler = DiscordWebhookHandler(discord_webhook_url, level=logging.WARNING)
+    discord_handler = DiscordWebhookHandler(discord_webhook_url, level=logging.INFO)
     discord_handler.setFormatter(logging.Formatter(LOG_FORMAT))
     root_logger.addHandler(discord_handler)
 
