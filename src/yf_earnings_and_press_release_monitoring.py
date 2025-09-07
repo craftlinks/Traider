@@ -1,7 +1,7 @@
 import asyncio
 from datetime import date
 from enum import Enum
-from typing import Dict, Optional
+from typing import Dict, Optional, Final
 import httpx
 from traider.messagebus.protocol import MessageBroker
 from traider.messagebus.brokers.memory import InMemoryBroker
@@ -10,21 +10,66 @@ from dspy.signatures import Signature, InputField, OutputField
 from dspy import Predict, LM, configure
 import os
 from dotenv import load_dotenv
+import logging
+from logging.handlers import RotatingFileHandler
+
+# Shared Discord client instance (initialized lazily)
+_discord_client: httpx.AsyncClient | None = None
 
 # Track tickers for which polling was cancelled because an earnings report was found.
 processed_tickers: set[str] = set()
 # Store last processed press‐release ID per ticker
 last_press_release_id: Dict[str, str] = {}
 import traider.yfinance as yf
-import logging
 
 # SETUP
-logging.basicConfig(level=logging.INFO)
+# ----- Replace default logging with console, file and Discord handlers -----
+load_dotenv()  # make sure environment variables are loaded
+
+LOG_FORMAT: Final = "%(asctime)s | %(levelname)s | %(name)s | %(message)s"
+
+class DiscordWebhookHandler(logging.Handler):
+    """Send log records to a Discord channel via webhook."""
+    def __init__(self, webhook_url: str, level: int = logging.ERROR) -> None:
+        super().__init__(level)
+        self.webhook_url = webhook_url
+        self.client = httpx.Client(timeout=5.0)
+
+    def emit(self, record: logging.LogRecord) -> None:
+        try:
+            msg = self.format(record)
+            self.client.post(self.webhook_url, json={"content": msg})
+        except Exception:
+            # Ensure logging errors do not crash the application
+            self.handleError(record)
+
+root_logger = logging.getLogger()
+root_logger.setLevel(logging.INFO)
+
+# Console handler
+console_handler = logging.StreamHandler()
+console_handler.setFormatter(logging.Formatter(LOG_FORMAT))
+root_logger.addHandler(console_handler)
+
+# Rotating file handler
+file_handler = RotatingFileHandler("monitoring.log", maxBytes=2_000_000, backupCount=3, encoding="utf-8")
+file_handler.setFormatter(logging.Formatter(LOG_FORMAT))
+root_logger.addHandler(file_handler)
+
+# Discord handler (only if webhook URL is present)
+discord_webhook_url = os.getenv("DISCORD_LOGS_WEBHOOK_URL")
+if discord_webhook_url:
+    discord_handler = DiscordWebhookHandler(discord_webhook_url, level=logging.WARNING)
+    discord_handler.setFormatter(logging.Formatter(LOG_FORMAT))
+    root_logger.addHandler(discord_handler)
+
 logger = logging.getLogger(__name__)
+
+# Silence noisy third-party libraries
 for name in ("httpx", "httpcore", "LiteLLM"):
     logging.getLogger(name).setLevel(logging.ERROR)
-load_dotenv()
-EARNINGS_PRODUCER_INTERVAL = 10
+
+EARNINGS_PRODUCER_INTERVAL = 60*60
 PRESS_RELEASE_POLL_INTERVAL = 10
 
 
@@ -245,17 +290,31 @@ async def judge_press_release(router: MessageRouter, press_release: yf.PressRele
 
 
 async def send_discord_message(message: str):
-    data = {"content": message}
+    """Send *message* to Discord via webhook.
 
-    # Retrieve the webhook URL once and validate its presence to satisfy type checkers
-    url = os.getenv("DISCORD_WEBHOOK_URL")
-    assert url is not None, (
-        "Environment variable 'DISCORD_WEBHOOK_URL' must be set and non‐empty."
-    )
+    A single httpx.AsyncClient is reused for efficiency.  If the webhook URL is
+    missing, the function becomes a no-op and simply logs the event so the
+    caller does not need to perform additional checks.
+    """
 
-    async with httpx.AsyncClient() as client:
-        response = await client.post(url, json=data)
+    # Retrieve the webhook URL only once at import time.
+    webhook_url: str | None = os.getenv("DISCORD_WEBHOOK_URL")
+
+    if not webhook_url:
+        logger.debug("Discord webhook URL not set – skipping message: %s", message)
+        return
+
+    # Lazily create (and reuse) a shared AsyncClient.
+    global _discord_client
+    if _discord_client is None:
+        _discord_client = httpx.AsyncClient(timeout=10.0)
+
+    try:
+        response = await _discord_client.post(webhook_url, json={"content": message})
         response.raise_for_status()
+    except Exception:
+        # Log once; do not raise so that callers are unaffected by Discord issues.
+        logger.exception("Failed to send Discord message")
 
 
 @router.route(listen_to=Channel.LLM_EARNINGS_REPORT)
